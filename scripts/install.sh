@@ -91,9 +91,20 @@ chmod 750 /etc/dash-of-pi
 
 echo "[5/7] Creating initial config..."
 if [ ! -f /etc/dash-of-pi/config.json ]; then
-    sudo -u dash-of-pi /usr/local/bin/dash-of-pi -config /etc/dash-of-pi/config.json &
+    # Run as dash-of-pi user with explicit video directory in working directory
+    cd /var/lib/dash-of-pi
+    sudo -u dash-of-pi HOME=/var/lib/dash-of-pi /usr/local/bin/dash-of-pi -config /etc/dash-of-pi/config.json &
     sleep 2
     pkill -f "dash-of-pi" || true
+    
+    # Update the generated config to use the correct video directory
+    if [ -f /etc/dash-of-pi/config.json ]; then
+        # Use sed to replace "./videos" with "/var/lib/dash-of-pi/videos"
+        sed -i 's|"./videos"|"/var/lib/dash-of-pi/videos"|g' /etc/dash-of-pi/config.json
+        chown dash-of-pi:dash-of-pi /etc/dash-of-pi/config.json
+        chmod 640 /etc/dash-of-pi/config.json
+    fi
+    
     echo "Config created at /etc/dash-of-pi/config.json"
 else
     echo "Config already exists at /etc/dash-of-pi/config.json"
