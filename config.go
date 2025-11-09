@@ -10,17 +10,18 @@ import (
 )
 
 type Config struct {
-	Port             int    `json:"port"`
-	VideoDir         string `json:"video_dir"`
-	StorageCapGB     int    `json:"storage_cap_gb"`
-	AuthToken        string `json:"auth_token"`
-	VideoBitrate     int    `json:"video_bitrate"`   // in kbps
-	VideoFPS         int    `json:"video_fps"`
-	VideoResWidth    int    `json:"video_res_width"`
-	VideoResHeight   int    `json:"video_res_height"`
-	SegmentLengthS   int    `json:"segment_length_s"` // seconds
-	CameraDevice     string `json:"camera_device"`    // e.g., /dev/video0, /dev/video1
-	MJPEGQuality     int    `json:"mjpeg_quality"`    // 2-31, lower = higher quality (default 5)
+	Port              int    `json:"port"`
+	VideoDir          string `json:"video_dir"`
+	StorageCapGB      int    `json:"storage_cap_gb"`
+	AuthToken         string `json:"auth_token"`
+	VideoBitrate      int    `json:"video_bitrate"`   // in kbps
+	VideoFPS          int    `json:"video_fps"`
+	VideoResWidth     int    `json:"video_res_width"`
+	VideoResHeight    int    `json:"video_res_height"`
+	SegmentLengthS    int    `json:"segment_length_s"` // seconds
+	CameraDevice      string `json:"camera_device"`    // e.g., /dev/video0, /dev/video1
+	MJPEGQuality      int    `json:"mjpeg_quality"`    // 2-31, lower = higher quality (default 5)
+	EnableTimestamp   bool   `json:"enable_timestamp"` // Enable timestamp overlay on video
 }
 
 func DefaultConfig() *Config {
@@ -45,6 +46,7 @@ func DefaultConfig() *Config {
 		SegmentLengthS:  DefaultSegmentLengthS,
 		CameraDevice:    DefaultCameraDevice,
 		MJPEGQuality:    DefaultMJPEGQuality,
+		EnableTimestamp: true, // Default to enabled
 	}
 }
 

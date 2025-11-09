@@ -81,6 +81,18 @@ func (c *Camera) recordAndStreamSegment(filename string) error {
 	// Get camera input based on OS
 	inputFormat, inputDevice := c.getCameraInput()
 
+	// Build video filter chain
+	videoFilter := fmt.Sprintf("scale=%d:%d", c.config.VideoResWidth, c.config.VideoResHeight)
+	if c.config.EnableTimestamp {
+		// Add timestamp overlay
+		// Using drawtext filter to overlay timestamp on video
+		timestampFilter := "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:" +
+			"text='%{localtime\\:%Y-%m-%d %H\\\\:%M\\\\:%S}':" +
+			"fontcolor=white:fontsize=24:box=1:boxcolor=black@0.5:" +
+			"boxborderw=5:x=10:y=10"
+		videoFilter = fmt.Sprintf("%s,%s", videoFilter, timestampFilter)
+	}
+
 	recordCmd := exec.Command(
 		"ffmpeg",
 		"-y",
@@ -88,7 +100,7 @@ func (c *Camera) recordAndStreamSegment(filename string) error {
 		"-f", inputFormat,
 		"-framerate", fmt.Sprintf("%d", c.config.VideoFPS),
 		"-i", inputDevice,
-		"-vf", fmt.Sprintf("scale=%d:%d", c.config.VideoResWidth, c.config.VideoResHeight),
+		"-vf", videoFilter,
 		"-c:v", "mjpeg",
 		"-q:v", fmt.Sprintf("%d", c.config.MJPEGQuality),
 		"-r", fmt.Sprintf("%d", c.config.VideoFPS),

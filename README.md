@@ -68,7 +68,8 @@ Config stored at `~/.config/dash-of-pi/config.json`:
   "video_res_height": 720,
   "segment_length_s": 60,
   "camera_device": "/dev/video0",
-  "mjpeg_quality": 5
+  "mjpeg_quality": 5,
+  "enable_timestamp": true
 }
 ```
 
@@ -80,6 +81,7 @@ Key settings:
   - Recommended: 5 (balanced), 3-4 (high quality), 7-8 (low quality for long-term storage)
 - `video_fps`: Recording framerate (default 24, can be increased to 30)
 - `video_bitrate`: Not used for MP4 export (uses quality setting instead)
+- `enable_timestamp`: Enable timestamp overlay on video footage (default: true)
 
 Restart service to apply changes.
 

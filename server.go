@@ -318,6 +318,7 @@ func (s *APIServer) handleGetConfig(w http.ResponseWriter, r *http.Request) {
 		"video_width":      s.config.VideoResWidth,
 		"video_height":     s.config.VideoResHeight,
 		"segment_length_s": s.config.SegmentLengthS,
+		"enable_timestamp": s.config.EnableTimestamp,
 	})
 }
 
