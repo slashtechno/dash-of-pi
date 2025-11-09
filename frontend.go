@@ -37,6 +37,50 @@ func getEmbeddedHTML() string {
 			border-bottom: 1px solid #333;
 		}
 
+		.filter-controls {
+			display: flex;
+			align-items: center;
+			gap: 15px;
+			margin-bottom: 20px;
+		}
+
+		.toggle-label {
+			display: flex;
+			align-items: center;
+			gap: 10px;
+			font-size: 14px;
+			cursor: pointer;
+		}
+
+		.toggle-switch {
+			width: 40px;
+			height: 24px;
+			background: #333;
+			border-radius: 12px;
+			position: relative;
+			cursor: pointer;
+			transition: background 0.2s;
+		}
+
+		.toggle-switch.active {
+			background: #4ade80;
+		}
+
+		.toggle-slider {
+			width: 20px;
+			height: 20px;
+			background: white;
+			border-radius: 50%;
+			position: absolute;
+			top: 2px;
+			left: 2px;
+			transition: left 0.2s;
+		}
+
+		.toggle-switch.active .toggle-slider {
+			left: 18px;
+		}
+
 		h1 {
 			font-size: 28px;
 			font-weight: 600;
@@ -346,6 +390,15 @@ func getEmbeddedHTML() string {
 
 		<div class="section">
 			<div class="section-title">Recent Videos</div>
+			<div class="filter-controls">
+				<label class="toggle-label">
+					<span>Show only AVI files</span>
+					<div class="toggle-switch active" id="aviToggle" onclick="toggleAviFilter()">
+						<div class="toggle-slider"></div>
+					</div>
+				</label>
+				<button id="regenerateBtn" onclick="regenerateAVI()" style="margin-left: auto;">🔄 Regenerate Missing AVIs</button>
+			</div>
 			<div id="videoList" class="video-list">
 				<div class="loading">Loading videos...</div>
 			</div>
@@ -366,6 +419,7 @@ func getEmbeddedHTML() string {
 	<script>
 		// Get token from URL or localStorage
 		let authToken = new URLSearchParams(window.location.search).get('token') || localStorage.getItem('authToken');
+		let aviFilterEnabled = true; // Default to showing only AVI files
 
 		async function setAuthToken() {
 			const token = document.getElementById('authToken').value;
@@ -375,6 +429,43 @@ func getEmbeddedHTML() string {
 				document.getElementById('authModal').classList.remove('active');
 				window.location.href = '?token=' + token;
 			}
+		}
+
+		function toggleAviFilter() {
+			aviFilterEnabled = !aviFilterEnabled;
+			const toggle = document.getElementById('aviToggle');
+			if (aviFilterEnabled) {
+				toggle.classList.add('active');
+			} else {
+				toggle.classList.remove('active');
+			}
+			loadVideos(); // Reload videos with new filter
+		}
+
+		function formatDuration(seconds) {
+			if (seconds === 0) return '0 seconds';
+			
+			const units = [
+				{ name: 'day', value: 86400 },
+				{ name: 'hour', value: 3600 },
+				{ name: 'minute', value: 60 },
+				{ name: 'second', value: 1 }
+			];
+
+			const parts = [];
+			let remaining = Math.floor(seconds);
+
+			for (const unit of units) {
+				if (remaining >= unit.value) {
+					const count = Math.floor(remaining / unit.value);
+					remaining -= count * unit.value;
+					parts.push(count + ' ' + unit.name + (count !== 1 ? 's' : ''));
+				}
+			}
+
+			if (parts.length === 0) return '0 seconds';
+			if (parts.length === 1) return parts[0];
+			return parts.slice(0, -1).join(', ') + ' and ' + parts[parts.length - 1];
 		}
 
 		function showError(message) {
@@ -455,12 +546,23 @@ func getEmbeddedHTML() string {
 					return;
 				}
 
-				container.innerHTML = data.videos.map(video => 
+				// Filter videos if AVI filter is enabled
+				let filteredVideos = data.videos;
+				if (aviFilterEnabled) {
+					filteredVideos = data.videos.filter(video => video.name.toLowerCase().endsWith('.avi'));
+				}
+
+				if (filteredVideos.length === 0) {
+					container.innerHTML = '<div class="empty-state">No AVI videos recorded yet</div>';
+					return;
+				}
+
+				container.innerHTML = filteredVideos.map(video => 
 				'<div class="video-item">' +
 				'<div class="video-info">' +
 				'<div class="video-name">' + video.name + '</div>' +
 				'<div class="video-meta">' +
-				(video.size / (1024 * 1024)).toFixed(2) + ' MB • ' + Math.floor(video.duration / 60) + ' min • ' +
+				(video.size / (1024 * 1024)).toFixed(2) + ' MB • ' + formatDuration(video.duration) + ' • ' +
 				new Date(video.mod_time).toLocaleString() +
 				'</div>' +
 				'</div>' +
@@ -471,6 +573,28 @@ func getEmbeddedHTML() string {
 				).join('');
 			} catch (err) {
 				console.error('Failed to load videos:', err);
+			}
+		}
+
+		async function regenerateAVI() {
+			const btn = document.getElementById('regenerateBtn');
+			btn.disabled = true;
+			btn.textContent = '⏳ Regenerating...';
+			
+			try {
+				const response = await apiCall('/api/videos/regenerate', {
+					method: 'POST'
+				});
+				
+				showError('Regeneration started: ' + response.files_to_convert + ' file(s) queued');
+				
+				// Reload videos after a short delay to show progress
+				setTimeout(loadVideos, 2000);
+			} catch (err) {
+				showError('Failed to start regeneration: ' + err.message);
+			} finally {
+				btn.disabled = false;
+				btn.textContent = '🔄 Regenerate Missing AVIs';
 			}
 		}
 

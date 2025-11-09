@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 )
@@ -81,11 +82,12 @@ func (c *Camera) recordAndStreamSegment(filename string) error {
 	// Get camera input based on OS
 	inputFormat, inputDevice := c.getCameraInput()
 
-	// Start recording to MJPEG file (can be read while being written, unlike mp4)
+	// Start recording to MJPEG file with proper framerate metadata
 	recordCmd := exec.Command(
 		"ffmpeg",
 		"-loglevel", "warning",
 		"-f", inputFormat,
+		"-framerate", fmt.Sprintf("%d", c.config.VideoFPS),
 		"-i", inputDevice,
 		"-vf", fmt.Sprintf("scale=%d:%d", c.config.VideoResWidth, c.config.VideoResHeight),
 		"-c:v", "mjpeg",
@@ -164,6 +166,11 @@ func (c *Camera) recordAndStreamSegment(filename string) error {
 	c.cmdMu.Lock()
 	c.recordCmd = nil
 	c.cmdMu.Unlock()
+
+	// Post-process: convert MJPEG to AVI with proper framerate metadata (no re-encoding)
+	if recordErr == nil {
+		go c.ConvertMJPEGToAVI(filename)
+	}
 
 	return recordErr
 }
@@ -247,6 +254,36 @@ func (c *Camera) extractFrameFromMJPEG(filename string) []byte {
 
 
 
+
+// ConvertMJPEGToAVI converts MJPEG to AVI with proper framerate metadata (no re-encoding)
+func (c *Camera) ConvertMJPEGToAVI(mjpegFile string) {
+	// Create output filename by replacing .mjpeg with .avi
+	aviFile := strings.TrimSuffix(mjpegFile, ".mjpeg") + ".avi"
+
+	// Use ffmpeg to re-mux MJPEG to AVI with framerate info, no re-encoding
+	cmd := exec.Command(
+		"ffmpeg",
+		"-y",
+		"-loglevel", "warning",
+		"-framerate", fmt.Sprintf("%d", c.config.VideoFPS),
+		"-i", mjpegFile,
+		"-c", "copy",
+		"-f", "avi",
+		aviFile,
+	)
+
+	// Suppress output but capture errors
+	var stderr strings.Builder
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		// Log error but don't fail - MJPEG file is still good for recovery
+		c.logger.Printf("Warning: failed to convert MJPEG to AVI: %v", err)
+		if stderr.Len() > 0 {
+			c.logger.Printf("ffmpeg stderr: %s", stderr.String())
+		}
+	}
+}
 
 // readJPEGFrame reads a single JPEG frame from a stream
 func readJPEGFrame(r interface{ Read([]byte) (int, error) }, buf []byte) ([]byte, error) {

@@ -83,6 +83,7 @@ func (s *APIServer) Start() error {
 	apiMux.HandleFunc("/api/stream/frame", s.handleStreamFrame)
 	apiMux.HandleFunc("/api/stream/ts", s.handleStreamTS)
 	apiMux.HandleFunc("/api/stream/m3u8", s.handleStreamM3U8)
+	apiMux.HandleFunc("/api/videos/regenerate", s.handleRegenerateAVI)
 
 	mux.Handle("/api/", s.auth.Check(apiMux))
 
@@ -439,6 +440,42 @@ func (s *APIServer) listVideoFiles() ([]VideoInfo, error) {
 	return videos, nil
 }
 
+func (s *APIServer) handleRegenerateAVI(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
 
+	entries, err := os.ReadDir(s.config.VideoDir)
+	if err != nil {
+		http.Error(w, "Failed to read video directory", http.StatusInternalServerError)
+		return
+	}
+
+	var mjpegFiles []string
+
+	// Find all MJPEG files
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		if strings.HasSuffix(name, ".mjpeg") {
+			mjpegFiles = append(mjpegFiles, name)
+		}
+	}
+
+	// Start conversion in background for all MJPEG files
+	for _, mjpegFile := range mjpegFiles {
+		mjpegPath := filepath.Join(s.config.VideoDir, mjpegFile)
+		go s.camera.ConvertMJPEGToAVI(mjpegPath)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"message":           "Regeneration started",
+		"files_to_convert":  len(mjpegFiles),
+	})
+}
 
 var startTime = time.Now()
