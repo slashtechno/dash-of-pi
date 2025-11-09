@@ -42,9 +42,10 @@ apt install -y hostapd dnsmasq jq iw dhcpcd5
 echo "Configuring services..."
 # Unmask hostapd if it's masked (some distros mask it by default)
 systemctl unmask hostapd 2>/dev/null || true
-# Make sure hostapd and dnsmasq don't start automatically on boot (we control them)
-systemctl disable hostapd 2>/dev/null || true
-systemctl disable dnsmasq 2>/dev/null || true
+# Enable hostapd and dnsmasq so they CAN be started, but don't start them now
+# The wifi_mode_switch.sh script will start/stop them as needed
+systemctl enable hostapd 2>/dev/null || true
+systemctl enable dnsmasq 2>/dev/null || true
 systemctl stop hostapd 2>/dev/null || true
 systemctl stop dnsmasq 2>/dev/null || true
 
