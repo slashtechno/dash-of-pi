@@ -25,24 +25,21 @@ docker-compose up -d
 - Authentication
 - Docker and Systemd options
 
-## Recording Format & Conversion
+## Recording Format & On-Demand Conversion
 
 **Recording Process:**
 - Video is recorded as **MJPEG** files (.mjpeg) with frame-level atomicity, ensuring data integrity even if power fails mid-recording
-- MJPEG is not easily playable in most players (suitable for streaming/processing)
-- After each recording segment completes, a **background conversion** process re-muxes the MJPEG to AVI (.avi) format with proper metadata
-- Conversion uses FFmpeg's `-c copy` flag (no re-encoding) for instant 1:1 fidelity with minimal CPU overhead
+- MJPEG is a sequence of JPEG-compressed frames with configurable quality (see `mjpeg_quality` config)
+
+**On-Demand AVI Generation:**
+- Use the dashboard "Generate Video" section to create downloadable AVI files on-demand
+- Choose either **Lifetime** (all MJPEG files) or **Custom Date Range**
+- AVI files are re-encoded using MPEG-4 codec at configurable bitrate (see `avi_bitrate` config)
+- Generated AVI files are streamed directly to the user and not stored on disk
 
 **Storage Accounting:**
-- Both MJPEG and AVI files count toward the storage cap
-- When the cap is exceeded, oldest files are deleted first (regardless of type)
-- Temporary duplication during conversion is expected and will be cleaned up
-
-**Power Loss & Recovery:**
-- **If power is cut during AVI conversion:** The MJPEG source file remains intact and playable. The incomplete/missing AVI file will not be created on restart
-- Click "🔄 Regenerate Missing AVIs" button on dashboard to recover orphaned MJPEG files
-- The dashboard displays only AVI files by default (with a toggle to show all formats)
-- Completed AVI files are always playable; partially-converted files are discarded on the next system start
+- Only MJPEG files count toward the storage cap
+- When the cap is exceeded, oldest MJPEG files are deleted automatically
 
 ## API Endpoints
 
@@ -70,7 +67,9 @@ Config stored at `~/.config/dash-of-pi/config.json`:
   "video_res_width": 1280,
   "video_res_height": 720,
   "segment_length_s": 60,
-  "camera_device": "/dev/video0"
+  "camera_device": "/dev/video0",
+  "mjpeg_quality": 5,
+  "avi_bitrate": 1024
 }
 ```
 
@@ -78,14 +77,19 @@ Key settings:
 - `camera_device`: Video input device (e.g., `/dev/video0`, `/dev/video1`)
 - `storage_cap_gb`: Max disk usage before deleting oldest videos
 - `segment_length_s`: Recording segment duration in seconds
+- `mjpeg_quality`: MJPEG recording quality (1-10, default 5; lower = higher quality, higher storage)
+  - Recommended: 5 (balanced), 3-4 (high quality for important footage), 7-8 (low quality for long-term storage)
+- `avi_bitrate`: Bitrate for on-demand AVI generation in kbps (default 1024)
+  - Recommended: 1024 (good balance), 512 (smaller files for slow connections), 2000-4000 (high quality)
 
 Restart service to apply changes.
 
 ## Dashboard
 
-- **AVI Filter Toggle:** Shows only AVI files by default
-- **Regenerate Button:** Re-encodes MJPEG files to AVI (use if power cut during conversion)
-- **Merge Script:** `./scripts/merge-mjpeg.sh [dir] [output]` combines all MJPEG files
+- **Generate Video Section:**
+  - **Lifetime:** Creates AVI from all stored MJPEG files
+  - **Custom Date Range:** Creates AVI from MJPEG files within specified dates
+  - AVI file is re-encoded during generation and streamed directly (not stored)
 
 ## Troubleshooting
 
@@ -101,7 +105,7 @@ journalctl -u dash-of-pi -f
 **No video being recorded:**
 ```bash
 ls ~/.local/state/dash-of-pi/videos/
-# Should have .mjpeg files (converted to .avi in background)
+# Should have .mjpeg files
 ```
 
 **Dashboard shows "Failed to connect":**
@@ -110,9 +114,9 @@ curl http://localhost:8080/health
 cat ~/.config/dash-of-pi/config.json | grep auth_token
 ```
 
-**MJPEG files without AVI (power cut during conversion):**
-- Click "🔄 Regenerate Missing AVIs" button on dashboard
-- Or manually: `./scripts/merge-mjpeg.sh /path/to/videos output.mp4`
+**AVI generation is slow:**
+- Reduce `avi_bitrate` in config (lower bitrate = faster re-encoding)
+- Example: Set `"avi_bitrate": 512` for 2x faster generation with smaller files
 
 ## Hardware Requirements
 

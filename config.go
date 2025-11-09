@@ -21,6 +21,8 @@ type Config struct {
 	VideoResHeight int    `json:"video_res_height"`
 	SegmentLengthS int    `json:"segment_length_s"` // seconds
 	CameraDevice   string `json:"camera_device"`    // e.g., /dev/video0, /dev/video1
+	MJPEGQuality   int    `json:"mjpeg_quality"`    // 1-10, lower = higher quality (default 5)
+	AVIBitrate     int    `json:"avi_bitrate"`      // in kbps, for on-demand AVI generation (default 1024)
 }
 
 func DefaultConfig() *Config {
@@ -45,6 +47,8 @@ func DefaultConfig() *Config {
 		VideoResHeight: 720,
 		SegmentLengthS: 60,
 		CameraDevice:   "/dev/video0",
+		MJPEGQuality:   5,  // 1-10, lower = higher quality
+		AVIBitrate:     1024, // kbps for on-demand AVI
 	}
 }
 
@@ -64,6 +68,12 @@ func LoadOrCreateConfig(configPath string) (*Config, error) {
 		// Set defaults for new fields if missing
 		if config.StreamPort == 0 {
 			config.StreamPort = 5000
+		}
+		if config.MJPEGQuality == 0 {
+			config.MJPEGQuality = 5
+		}
+		if config.AVIBitrate == 0 {
+			config.AVIBitrate = 1024
 		}
 
 		return config, nil

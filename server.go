@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -77,13 +78,13 @@ func (s *APIServer) Start() error {
 	apiMux.HandleFunc("/api/videos", s.handleListVideos)
 	apiMux.HandleFunc("/api/video/download", s.handleDownloadVideo)
 	apiMux.HandleFunc("/api/video/latest", s.handleLatestVideo)
+	apiMux.HandleFunc("/api/videos/generate-avi", s.handleGenerateAVI)
 	apiMux.HandleFunc("/api/videos/", s.handleServeSegment)
 	apiMux.HandleFunc("/api/auth/token", s.handleGetAuthToken)
 	apiMux.HandleFunc("/api/config", s.handleGetConfig)
 	apiMux.HandleFunc("/api/stream/frame", s.handleStreamFrame)
 	apiMux.HandleFunc("/api/stream/ts", s.handleStreamTS)
 	apiMux.HandleFunc("/api/stream/m3u8", s.handleStreamM3U8)
-	apiMux.HandleFunc("/api/videos/regenerate", s.handleRegenerateAVI)
 
 	mux.Handle("/api/", s.auth.Check(apiMux))
 
@@ -440,12 +441,29 @@ func (s *APIServer) listVideoFiles() ([]VideoInfo, error) {
 	return videos, nil
 }
 
-func (s *APIServer) handleRegenerateAVI(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "POST" {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+func (s *APIServer) handleGenerateAVI(w http.ResponseWriter, r *http.Request) {
+	startStr := r.URL.Query().Get("start")
+	endStr := r.URL.Query().Get("end")
+
+	if startStr == "" || endStr == "" {
+		http.Error(w, "Missing start or end parameter", http.StatusBadRequest)
 		return
 	}
 
+	// Parse timestamps
+	startTime, err := time.Parse(time.RFC3339, startStr)
+	if err != nil {
+		http.Error(w, "Invalid start time format", http.StatusBadRequest)
+		return
+	}
+
+	endTime, err := time.Parse(time.RFC3339, endStr)
+	if err != nil {
+		http.Error(w, "Invalid end time format", http.StatusBadRequest)
+		return
+	}
+
+	// Get all MJPEG files in date range
 	entries, err := os.ReadDir(s.config.VideoDir)
 	if err != nil {
 		http.Error(w, "Failed to read video directory", http.StatusInternalServerError)
@@ -454,28 +472,79 @@ func (s *APIServer) handleRegenerateAVI(w http.ResponseWriter, r *http.Request) 
 
 	var mjpegFiles []string
 
-	// Find all MJPEG files
 	for _, entry := range entries {
 		if entry.IsDir() {
 			continue
 		}
 		name := entry.Name()
-		if strings.HasSuffix(name, ".mjpeg") {
-			mjpegFiles = append(mjpegFiles, name)
+		if !strings.HasSuffix(name, ".mjpeg") {
+			continue
+		}
+
+		info, err := entry.Info()
+		if err != nil {
+			continue
+		}
+
+		modTime := info.ModTime()
+		if modTime.After(startTime) && modTime.Before(endTime) {
+			mjpegFiles = append(mjpegFiles, filepath.Join(s.config.VideoDir, name))
 		}
 	}
 
-	// Start conversion in background for all MJPEG files
-	for _, mjpegFile := range mjpegFiles {
-		mjpegPath := filepath.Join(s.config.VideoDir, mjpegFile)
-		go s.camera.ConvertMJPEGToAVI(mjpegPath)
+	if len(mjpegFiles) == 0 {
+		http.Error(w, "No videos found in the specified date range", http.StatusNotFound)
+		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"message":           "Regeneration started",
-		"files_to_convert":  len(mjpegFiles),
+	// Sort by modification time
+	sort.Slice(mjpegFiles, func(i, j int) bool {
+		iInfo, _ := os.Stat(mjpegFiles[i])
+		jInfo, _ := os.Stat(mjpegFiles[j])
+		return iInfo.ModTime().Before(jInfo.ModTime())
 	})
+
+	// Create concat file
+	concatFile := filepath.Join(s.config.VideoDir, ".concat_list.txt")
+	var concatContent strings.Builder
+	for _, file := range mjpegFiles {
+		concatContent.WriteString(fmt.Sprintf("file '%s'\n", file))
+	}
+
+	if err := os.WriteFile(concatFile, []byte(concatContent.String()), 0644); err != nil {
+		http.Error(w, "Failed to create concat file", http.StatusInternalServerError)
+		return
+	}
+	defer os.Remove(concatFile)
+
+	// Generate AVI using ffmpeg concat with re-encoding to h264
+	outputFile := filepath.Join(s.config.VideoDir, ".temp_output.avi")
+	cmd := exec.Command(
+		"ffmpeg",
+		"-y",
+		"-loglevel", "warning",
+		"-f", "concat",
+		"-safe", "0",
+		"-i", concatFile,
+		"-c:v", "mpeg4",
+		"-b:v", fmt.Sprintf("%dk", s.config.AVIBitrate),
+		"-q:v", "5",
+		"-f", "avi",
+		outputFile,
+	)
+
+	if err := cmd.Run(); err != nil {
+		http.Error(w, "Failed to generate video", http.StatusInternalServerError)
+		return
+	}
+	defer os.Remove(outputFile)
+
+	// Stream the file as download
+	w.Header().Set("Content-Type", "video/avi")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=dashcam_%s.avi", time.Now().Format("2006-01-02")))
+	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+
+	http.ServeFile(w, r, outputFile)
 }
 
 var startTime = time.Now()

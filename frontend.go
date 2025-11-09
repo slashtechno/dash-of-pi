@@ -389,16 +389,26 @@ func getEmbeddedHTML() string {
 		</div>
 
 		<div class="section">
-			<div class="section-title">Recent Videos</div>
+			<div class="section-title">Generate Video</div>
 			<div class="filter-controls">
-				<label class="toggle-label">
-					<span>Show only AVI files</span>
-					<div class="toggle-switch active" id="aviToggle" onclick="toggleAviFilter()">
-						<div class="toggle-slider"></div>
-					</div>
-				</label>
-				<button id="regenerateBtn" onclick="regenerateAVI()" style="margin-left: auto;">🔄 Regenerate Missing AVIs</button>
+				<button id="lifetimeBtn" onclick="generateAVI('lifetime')" style="margin-right: 10px;">📹 Lifetime</button>
+				<button id="customBtn" onclick="toggleCustomDate()" style="margin-right: auto;">📅 Custom Date Range</button>
 			</div>
+			<div id="customDateForm" style="display: none; margin-bottom: 20px; padding: 15px; background: #1a1f26; border: 1px solid #333; border-radius: 6px;">
+				<div class="form-group">
+					<label>Start Date</label>
+					<input type="datetime-local" id="startDate">
+				</div>
+				<div class="form-group">
+					<label>End Date</label>
+					<input type="datetime-local" id="endDate">
+				</div>
+				<button id="generateCustomBtn" onclick="generateAVI('custom')" style="width: 100%;">Generate Video</button>
+			</div>
+		</div>
+
+		<div class="section">
+			<div class="section-title">Recent Videos</div>
 			<div id="videoList" class="video-list">
 				<div class="loading">Loading videos...</div>
 			</div>
@@ -419,7 +429,6 @@ func getEmbeddedHTML() string {
 	<script>
 		// Get token from URL or localStorage
 		let authToken = new URLSearchParams(window.location.search).get('token') || localStorage.getItem('authToken');
-		let aviFilterEnabled = true; // Default to showing only AVI files
 
 		async function setAuthToken() {
 			const token = document.getElementById('authToken').value;
@@ -431,15 +440,18 @@ func getEmbeddedHTML() string {
 			}
 		}
 
-		function toggleAviFilter() {
-			aviFilterEnabled = !aviFilterEnabled;
-			const toggle = document.getElementById('aviToggle');
-			if (aviFilterEnabled) {
-				toggle.classList.add('active');
+		function toggleCustomDate() {
+			const form = document.getElementById('customDateForm');
+			if (form.style.display === 'none') {
+				form.style.display = 'block';
+				// Set default dates to last 7 days
+				const now = new Date();
+				const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+				document.getElementById('endDate').value = now.toISOString().slice(0, 16);
+				document.getElementById('startDate').value = sevenDaysAgo.toISOString().slice(0, 16);
 			} else {
-				toggle.classList.remove('active');
+				form.style.display = 'none';
 			}
-			loadVideos(); // Reload videos with new filter
 		}
 
 		function formatDuration(seconds) {
@@ -546,18 +558,7 @@ func getEmbeddedHTML() string {
 					return;
 				}
 
-				// Filter videos if AVI filter is enabled
-				let filteredVideos = data.videos;
-				if (aviFilterEnabled) {
-					filteredVideos = data.videos.filter(video => video.name.toLowerCase().endsWith('.avi'));
-				}
-
-				if (filteredVideos.length === 0) {
-					container.innerHTML = '<div class="empty-state">No AVI videos recorded yet</div>';
-					return;
-				}
-
-				container.innerHTML = filteredVideos.map(video => 
+				container.innerHTML = data.videos.map(video => 
 				'<div class="video-item">' +
 				'<div class="video-info">' +
 				'<div class="video-name">' + video.name + '</div>' +
@@ -576,25 +577,42 @@ func getEmbeddedHTML() string {
 			}
 		}
 
-		async function regenerateAVI() {
-			const btn = document.getElementById('regenerateBtn');
+		async function generateAVI(type) {
+			let startDate, endDate;
+			
+			if (type === 'lifetime') {
+				startDate = new Date(0).toISOString();
+				endDate = new Date().toISOString();
+			} else if (type === 'custom') {
+				const startInput = document.getElementById('startDate').value;
+				const endInput = document.getElementById('endDate').value;
+				
+				if (!startInput || !endInput) {
+					showError('Please select both start and end dates');
+					return;
+				}
+				
+				startDate = new Date(startInput).toISOString();
+				endDate = new Date(endInput).toISOString();
+			}
+			
+			const btn = type === 'lifetime' ? document.getElementById('lifetimeBtn') : document.getElementById('generateCustomBtn');
 			btn.disabled = true;
-			btn.textContent = '⏳ Regenerating...';
+			const originalText = btn.textContent;
+			btn.textContent = '⏳ Generating...';
 			
 			try {
-				const response = await apiCall('/api/videos/regenerate', {
-					method: 'POST'
-				});
-				
-				showError('Regeneration started: ' + response.files_to_convert + ' file(s) queued');
-				
-				// Reload videos after a short delay to show progress
-				setTimeout(loadVideos, 2000);
+				const url = '/api/videos/generate-avi?start=' + encodeURIComponent(startDate) + '&end=' + encodeURIComponent(endDate) + '&token=' + authToken;
+				const a = document.createElement('a');
+				a.href = url;
+				a.download = 'dashcam_' + new Date().toISOString().slice(0, 10) + '.avi';
+				a.click();
+				showError('Video generation started. Download should begin shortly.');
 			} catch (err) {
-				showError('Failed to start regeneration: ' + err.message);
+				showError('Failed to generate video: ' + err.message);
 			} finally {
 				btn.disabled = false;
-				btn.textContent = '🔄 Regenerate Missing AVIs';
+				btn.textContent = originalText;
 			}
 		}
 

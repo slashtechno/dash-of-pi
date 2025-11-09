@@ -91,7 +91,7 @@ func (c *Camera) recordAndStreamSegment(filename string) error {
 		"-i", inputDevice,
 		"-vf", fmt.Sprintf("scale=%d:%d", c.config.VideoResWidth, c.config.VideoResHeight),
 		"-c:v", "mjpeg",
-		"-q:v", "5",
+		"-q:v", fmt.Sprintf("%d", c.config.MJPEGQuality),
 		"-r", fmt.Sprintf("%d", c.config.VideoFPS),
 		"-t", fmt.Sprintf("%d", c.config.SegmentLengthS),
 		"-f", "mjpeg",
@@ -166,11 +166,6 @@ func (c *Camera) recordAndStreamSegment(filename string) error {
 	c.cmdMu.Lock()
 	c.recordCmd = nil
 	c.cmdMu.Unlock()
-
-	// Post-process: convert MJPEG to AVI with proper framerate metadata (no re-encoding)
-	if recordErr == nil {
-		go c.ConvertMJPEGToAVI(filename)
-	}
 
 	return recordErr
 }

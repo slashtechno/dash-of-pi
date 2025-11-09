@@ -144,5 +144,5 @@ func (sm *StorageManager) Stop() {
 
 func isVideoFile(name string) bool {
 	ext := filepath.Ext(name)
-	return ext == ".mjpeg" || ext == ".mp4" || ext == ".avi" || ext == ".h264" || ext == ".h265" || ext == ".webm"
+	return ext == ".mjpeg"
 }
