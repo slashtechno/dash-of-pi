@@ -30,7 +30,24 @@ apt-get install -y \
     wget
 
 # Install Go 1.24.9 to /usr/local (unless there's a go version 1.20+ already) 
-if ! command -v go &> /dev/null || ! go version | grep -q "go1\.[2-9][0-9]\|go[2-9]\."; then
+# Check if Go is installed and get its version
+GO_INSTALLED=false
+if command -v go &> /dev/null; then
+    GO_VERSION_OUTPUT=$(go version 2>/dev/null || echo "")
+    if echo "$GO_VERSION_OUTPUT" | grep -q "go1\.[2-9][0-9]\|go[2-9]\."; then
+        GO_INSTALLED=true
+        echo "Go 1.20+ already installed: $GO_VERSION_OUTPUT"
+    fi
+elif [ -x /usr/local/go/bin/go ]; then
+    GO_VERSION_OUTPUT=$(/usr/local/go/bin/go version 2>/dev/null || echo "")
+    if echo "$GO_VERSION_OUTPUT" | grep -q "go1\.[2-9][0-9]\|go[2-9]\."; then
+        GO_INSTALLED=true
+        export PATH=$PATH:/usr/local/go/bin
+        echo "Go 1.20+ already installed: $GO_VERSION_OUTPUT"
+    fi
+fi
+
+if [ "$GO_INSTALLED" = false ]; then
     echo "Installing Go 1.24.9..."
     GO_VERSION="1.24.9"
     GO_ARCH="linux-arm64"
@@ -54,8 +71,6 @@ if ! command -v go &> /dev/null || ! go version | grep -q "go1\.[2-9][0-9]\|go[2
     fi
     
     echo "Go installed to /usr/local/go"
-else
-    echo "Go 1.20+ already installed"
 fi
 
 # Verify Go installation
