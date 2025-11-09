@@ -1,0 +1,10 @@
+{
+  "home_wifi": {
+    "ssid": "YourHomeSSID",
+    "psk": "YourHomePassword"
+  },
+  "hotspot": {
+    "ssid": "PiHotspot",
+    "psk": "HotspotPassword"
+  }
+}

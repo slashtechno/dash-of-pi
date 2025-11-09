@@ -1,0 +1,15 @@
+[Unit]
+Description=Switch WiFi mode between client (home) and hotspot
+After=network-pre.target
+Before=network.target
+Wants=network-pre.target
+DefaultDependencies=no
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/wifi_mode_switch.sh
+RemainAfterExit=yes
+TimeoutStartSec=60
+
+[Install]
+WantedBy=multi-user.target
