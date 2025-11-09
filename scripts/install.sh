@@ -29,12 +29,31 @@ apt-get install -y \
     ffmpeg \
     wget
 
-# Install Go 1.24.9 using the golang installation script (unless there's a go version 1.20+ already) 
+# Install Go 1.24.9 to /usr/local (unless there's a go version 1.20+ already) 
 if ! command -v go &> /dev/null || ! go version | grep -q "go1\.[2-9][0-9]\|go[2-9]\."; then
     echo "Installing Go 1.24.9..."
-    wget -q -O - https://raw.githubusercontent.com/canha/golang-tools-install-script/master/goinstall.sh | bash -s -- --version 1.24.9
-    export PATH=$HOME/.go/bin:$PATH
-    export GOROOT=$HOME/.go
+    GO_VERSION="1.24.9"
+    GO_ARCH="linux-arm64"
+    
+    # Download Go tarball
+    wget -q "https://go.dev/dl/go${GO_VERSION}.${GO_ARCH}.tar.gz"
+    
+    # Remove any previous Go installation and extract the archive into /usr/local
+    # This is done as a single command as recommended by Go's installation docs
+    rm -rf /usr/local/go && tar -C /usr/local -xzf "go${GO_VERSION}.${GO_ARCH}.tar.gz"
+    
+    # Clean up tarball
+    rm "go${GO_VERSION}.${GO_ARCH}.tar.gz"
+    
+    # Add /usr/local/go/bin to PATH for this session
+    export PATH=$PATH:/usr/local/go/bin
+    
+    # Add to /etc/profile for system-wide installation (persists across logins)
+    if ! grep -q "/usr/local/go/bin" /etc/profile; then
+        echo 'export PATH=$PATH:/usr/local/go/bin' >> /etc/profile
+    fi
+    
+    echo "Go installed to /usr/local/go"
 else
     echo "Go 1.20+ already installed"
 fi
