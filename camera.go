@@ -84,12 +84,13 @@ func (c *Camera) recordAndStreamSegment(filename string) error {
 	// Build video filter chain
 	videoFilter := fmt.Sprintf("scale=%d:%d", c.config.VideoResWidth, c.config.VideoResHeight)
 	if c.config.EnableTimestamp {
-		// Add timestamp overlay
-		// Using drawtext filter to overlay timestamp on video
-		timestampFilter := "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:" +
-			"text='%{localtime\\:%Y-%m-%d %H\\\\:%M\\\\:%S}':" +
-			"fontcolor=white:fontsize=24:box=1:boxcolor=black@0.5:" +
-			"boxborderw=5:x=10:y=10"
+		// Add timestamp overlay using drawtext filter
+		// Try multiple font paths for compatibility across different systems
+		fontPath := c.findAvailableFont()
+		timestampFilter := fmt.Sprintf("drawtext=fontfile=%s:"+
+			"text='%%{localtime\\:%%Y-%%m-%%d %%H\\\\:%%M\\\\:%%S}':"+
+			"fontcolor=white:fontsize=24:box=1:boxcolor=black@0.5:"+
+			"boxborderw=5:x=10:y=10", fontPath)
 		videoFilter = fmt.Sprintf("%s,%s", videoFilter, timestampFilter)
 	}
 
@@ -262,6 +263,30 @@ func (c *Camera) extractFrameFromMJPEG(filename string) []byte {
 	}
 
 	return nil // No matching start marker found
+}
+
+// findAvailableFont checks for available fonts and returns the first found
+func (c *Camera) findAvailableFont() string {
+	// List of common font paths to try (in order of preference)
+	fontPaths := []string{
+		"/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+		"/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+		"/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+		"/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+		"/System/Library/Fonts/Helvetica.ttc", // macOS
+		"C:\\Windows\\Fonts\\arial.ttf",        // Windows
+	}
+
+	for _, fontPath := range fontPaths {
+		if _, err := os.Stat(fontPath); err == nil {
+			return fontPath
+		}
+	}
+
+	// Fallback: let FFmpeg use its default font
+	// This may fail on some systems, but it's better than hardcoding a path that doesn't exist
+	c.logger.Printf("Warning: No known font file found, using FFmpeg default")
+	return "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
 }
 
 // getCameraInput returns the format and device based on OS
