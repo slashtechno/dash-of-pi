@@ -88,7 +88,7 @@ func (sm *StorageManager) enforceStorageCap() error {
 		totalSize += f.size
 	}
 
-	capBytes := int64(sm.storageCapGB) * 1024 * 1024 * 1024
+	capBytes := int64(sm.storageCapGB) * BytesPerGB
 
 	// If over cap, delete oldest files
 	if totalSize > capBytes {
@@ -133,7 +133,7 @@ func (sm *StorageManager) GetStorageStats() (used int64, cap int64, err error) {
 		used += info.Size()
 	}
 
-	cap = int64(sm.storageCapGB) * 1024 * 1024 * 1024
+	cap = int64(sm.storageCapGB) * BytesPerGB
 	return used, cap, nil
 }
 

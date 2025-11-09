@@ -391,7 +391,7 @@ func getEmbeddedHTML() string {
 		<div class="section">
 			<div class="section-title">Generate Video</div>
 			<div class="filter-controls">
-				<button id="lifetimeBtn" onclick="generateAVI('lifetime')" style="margin-right: 10px;">📹 Lifetime</button>
+				<button id="lifetimeBtn" onclick="generateVideo('lifetime')" style="margin-right: 10px;">📹 Lifetime</button>
 				<button id="customBtn" onclick="toggleCustomDate()" style="margin-right: auto;">📅 Custom Date Range</button>
 			</div>
 			<div id="customDateForm" style="display: none; margin-bottom: 20px; padding: 15px; background: #1a1f26; border: 1px solid #333; border-radius: 6px;">
@@ -403,7 +403,7 @@ func getEmbeddedHTML() string {
 					<label>End Date</label>
 					<input type="datetime-local" id="endDate">
 				</div>
-				<button id="generateCustomBtn" onclick="generateAVI('custom')" style="width: 100%;">Generate Video</button>
+				<button id="generateCustomBtn" onclick="generateVideo('custom')" style="width: 100%;">Generate Video</button>
 			</div>
 		</div>
 
@@ -577,12 +577,16 @@ func getEmbeddedHTML() string {
 			}
 		}
 
-		async function generateAVI(type) {
+		async function generateVideo(type) {
 			let startDate, endDate;
 			
 			if (type === 'lifetime') {
 				startDate = new Date(0).toISOString();
 				endDate = new Date().toISOString();
+				// Warn about long processing time for lifetime exports
+				if (!confirm('⚠️ Lifetime video export may take a VERY long time (several minutes to hours depending on the amount of footage). The download will start automatically when ready. Continue?')) {
+					return;
+				}
 			} else if (type === 'custom') {
 				const startInput = document.getElementById('startDate').value;
 				const endInput = document.getElementById('endDate').value;
@@ -594,6 +598,12 @@ func getEmbeddedHTML() string {
 				
 				startDate = new Date(startInput).toISOString();
 				endDate = new Date(endInput).toISOString();
+				
+				// Warn about processing time for large date ranges
+				const daysDiff = (new Date(endDate) - new Date(startDate)) / (1000 * 60 * 60 * 24);
+				if (daysDiff > 1 && !confirm('⚠️ Video generation may take several minutes for large date ranges (' + Math.round(daysDiff) + ' days selected). The download will start when ready. Continue?')) {
+					return;
+				}
 			}
 			
 			const btn = type === 'lifetime' ? document.getElementById('lifetimeBtn') : document.getElementById('generateCustomBtn');
@@ -602,12 +612,12 @@ func getEmbeddedHTML() string {
 			btn.textContent = '⏳ Generating...';
 			
 			try {
-				const url = '/api/videos/generate-avi?start=' + encodeURIComponent(startDate) + '&end=' + encodeURIComponent(endDate) + '&token=' + authToken;
+				const url = '/api/videos/generate-video?start=' + encodeURIComponent(startDate) + '&end=' + encodeURIComponent(endDate) + '&token=' + authToken;
 				const a = document.createElement('a');
 				a.href = url;
-				a.download = 'dashcam_' + new Date().toISOString().slice(0, 10) + '.avi';
+				a.download = 'dashcam_' + new Date().toISOString().slice(0, 10) + '.mp4';
 				a.click();
-				showError('Video generation started. Download should begin shortly.');
+				showError('🎬 Video generation started! This may take several minutes. Download will begin automatically when complete. Check server logs for progress.');
 			} catch (err) {
 				showError('Failed to generate video: ' + err.message);
 			} finally {
@@ -626,20 +636,85 @@ func getEmbeddedHTML() string {
 
 		function loadStream() {
 		const container = document.getElementById('playerContainer');
+		
+		// Try MJPEG multipart streaming first (more efficient)
+		const useMJPEGStream = true; // Set to false to use frame polling
+		
+		if (useMJPEGStream) {
+			// Use native MJPEG multipart streaming - most efficient
+			container.innerHTML = '<img id="live-stream" class="stream-viewer" src="" alt="Live stream">';
+			const img = document.getElementById('live-stream');
+			let reconnectAttempts = 0;
+			const maxReconnectAttempts = 3;
+			
+			function connectStream() {
+				const timestamp = new Date().getTime();
+				img.src = '/api/stream/mjpeg?token=' + authToken + '&t=' + timestamp;
+				console.log('MJPEG stream connecting...');
+			}
+			
+			// Auto-reconnect on error
+			img.onerror = function() {
+				reconnectAttempts++;
+				console.log('MJPEG stream error (attempt ' + reconnectAttempts + '/' + maxReconnectAttempts + ')');
+				
+				if (reconnectAttempts < maxReconnectAttempts) {
+					// Try reconnecting after 2 seconds
+					setTimeout(connectStream, 2000);
+				} else {
+					console.log('MJPEG streaming failed after ' + maxReconnectAttempts + ' attempts, falling back to polling');
+					loadStreamPolling();
+				}
+			};
+			
+			// Monitor for stream stalls (image not updating)
+			let lastImageUpdate = Date.now();
+			img.onload = function() {
+				lastImageUpdate = Date.now();
+				reconnectAttempts = 0; // Reset on successful load
+			};
+			
+			// Check for stalls every 10 seconds
+			setInterval(function() {
+				const timeSinceUpdate = Date.now() - lastImageUpdate;
+				if (timeSinceUpdate > 10000 && reconnectAttempts < maxReconnectAttempts) {
+					console.log('Stream appears stalled, reconnecting...');
+					connectStream();
+				}
+			}, 10000);
+			
+			connectStream();
+		} else {
+			loadStreamPolling();
+		}
+		}
+
+		function loadStreamPolling() {
+		const container = document.getElementById('playerContainer');
 		container.innerHTML = '<img id="live-stream" class="stream-viewer" src="" alt="Live stream">';
 		
 		const img = document.getElementById('live-stream');
 		
-		// Poll for frames every 500ms (2 FPS for preview)
-		let lastUpdate = 0;
+		// Poll for frames at 25 FPS (matches server extraction rate)
+		let isLoading = false;
 		setInterval(() => {
-			const now = Date.now();
-			if (now - lastUpdate < 500) return;
-			lastUpdate = now;
+			if (isLoading) return;
+			isLoading = true;
 			
+			const now = Date.now();
 			const url = '/api/stream/frame?token=' + authToken + '&t=' + now;
-			img.src = url;
-		}, 100);
+			
+			// Create new image to preload
+			const newImg = new Image();
+			newImg.onload = function() {
+				img.src = this.src;
+				isLoading = false;
+			};
+			newImg.onerror = function() {
+				isLoading = false;
+			};
+			newImg.src = url;
+		}, 40); // 25 FPS update rate (40ms interval)
 		}
 
 		// Initial load

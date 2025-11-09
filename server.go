@@ -50,7 +50,6 @@ type StatusResponse struct {
 func NewAPIServer(config *Config, camera *Camera, storage *StorageManager, logger *Logger) *APIServer {
 	auth := NewAuthMiddleware(config.AuthToken)
 	streamMgr := NewStreamManager(config, logger)
-	streamMgr.videoDir = config.VideoDir
 	camera.SetStreamManager(streamMgr)
 	return &APIServer{
 		config:    config,
@@ -78,22 +77,23 @@ func (s *APIServer) Start() error {
 	apiMux.HandleFunc("/api/videos", s.handleListVideos)
 	apiMux.HandleFunc("/api/video/download", s.handleDownloadVideo)
 	apiMux.HandleFunc("/api/video/latest", s.handleLatestVideo)
-	apiMux.HandleFunc("/api/videos/generate-avi", s.handleGenerateAVI)
+	apiMux.HandleFunc("/api/videos/generate-video", s.handleGenerateVideo)
 	apiMux.HandleFunc("/api/videos/", s.handleServeSegment)
 	apiMux.HandleFunc("/api/auth/token", s.handleGetAuthToken)
 	apiMux.HandleFunc("/api/config", s.handleGetConfig)
 	apiMux.HandleFunc("/api/stream/frame", s.handleStreamFrame)
-	apiMux.HandleFunc("/api/stream/ts", s.handleStreamTS)
-	apiMux.HandleFunc("/api/stream/m3u8", s.handleStreamM3U8)
+	apiMux.HandleFunc("/api/stream/mjpeg", s.handleStreamMJPEG)
 
 	mux.Handle("/api/", s.auth.Check(apiMux))
 
 	s.server = &http.Server{
-		Addr:           fmt.Sprintf(":%d", s.config.Port),
-		Handler:        mux,
-		ReadTimeout:    15 * time.Second,
-		WriteTimeout:   15 * time.Second,
-		MaxHeaderBytes: 1 << 20,
+		Addr:              fmt.Sprintf(":%d", s.config.Port),
+		Handler:           mux,
+		ReadTimeout:       ServerReadTimeout,
+		WriteTimeout:      ServerWriteTimeout,
+		IdleTimeout:       ServerIdleTimeout,
+		ReadHeaderTimeout: ServerReadHeaderTimeout,
+		MaxHeaderBytes:    HTTPMaxHeaderBytes,
 	}
 
 	// Start stream manager
@@ -152,7 +152,7 @@ func (s *APIServer) handleStatus(w http.ResponseWriter, r *http.Request) {
 		Storage: StorageStats{
 			UsedBytes: used,
 			CapBytes:  cap,
-			UsedGB:    float64(used) / (1024 * 1024 * 1024),
+			UsedGB:    float64(used) / BytesPerGB,
 			CapGB:     s.config.StorageCapGB,
 			Percent:   percent,
 		},
@@ -231,8 +231,7 @@ func (s *APIServer) handleLatestVideo(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		name := entry.Name()
-		// Accept both mp4 and webm
-		if !strings.HasSuffix(name, ".mp4") && !strings.HasSuffix(name, ".webm") {
+		if !IsPlayableVideo(name) {
 			continue
 		}
 
@@ -262,10 +261,10 @@ func (s *APIServer) handleLatestVideo(w http.ResponseWriter, r *http.Request) {
 
 	videoPath := filepath.Join(s.config.VideoDir, fileToServe)
 
-	// Detect format from file extension
-	contentType := "video/webm"
-	if strings.HasSuffix(videoPath, ".mp4") {
-		contentType = "video/mp4"
+	// Set content type based on file extension
+	contentType := "video/mp4"
+	if HasExtension(videoPath, ExtensionWebM) {
+		contentType = "video/webm"
 	}
 
 	w.Header().Set("Content-Type", contentType)
@@ -342,7 +341,7 @@ func (s *APIServer) getLatestVideoFile() string {
 			continue
 		}
 		name := entry.Name()
-		if !strings.HasSuffix(name, ".mp4") {
+		if !HasExtension(name, ExtensionMP4) {
 			continue
 		}
 		info, err := entry.Info()
@@ -376,7 +375,7 @@ func (s *APIServer) getLatestVideoFile() string {
 func (s *APIServer) handleStreamFrame(w http.ResponseWriter, r *http.Request) {
 	// Get latest frame from stream manager
 	frameData := s.streamMgr.GetLatestFrame()
-	if frameData == nil || len(frameData) == 0 {
+	if len(frameData) == 0 {
 		http.Error(w, "No frame available", http.StatusServiceUnavailable)
 		return
 	}
@@ -389,14 +388,76 @@ func (s *APIServer) handleStreamFrame(w http.ResponseWriter, r *http.Request) {
 	w.Write(frameData)
 }
 
-// handleStreamTS serves the live MPEG-TS stream
-func (s *APIServer) handleStreamTS(w http.ResponseWriter, r *http.Request) {
-	s.streamMgr.ServeHTTP(w, r)
-}
+// handleStreamMJPEG serves continuous MJPEG stream (multipart)
+func (s *APIServer) handleStreamMJPEG(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "multipart/x-mixed-replace; boundary=frame")
+	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+	w.Header().Set("Pragma", "no-cache")
+	w.Header().Set("Expires", "0")
+	w.Header().Set("Connection", "close")
 
-// handleStreamM3U8 serves HLS playlist for compatibility
-func (s *APIServer) handleStreamM3U8(w http.ResponseWriter, r *http.Request) {
-	s.streamMgr.ServeStreamM3U8(w, r)
+	boundary := "frame"
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "Streaming not supported", http.StatusInternalServerError)
+		return
+	}
+
+	s.logger.Printf("MJPEG stream client connected")
+	defer s.logger.Printf("MJPEG stream client disconnected")
+
+	// Stream frames continuously at target FPS
+	ticker := time.NewTicker(time.Duration(MJPEGStreamIntervalMS) * time.Millisecond)
+	defer ticker.Stop()
+
+	frameCount := 0
+	noFrameCount := 0
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case <-ticker.C:
+			frameData := s.streamMgr.GetLatestFrame()
+			if len(frameData) == 0 {
+				noFrameCount++
+				if noFrameCount > MJPEGNoFrameTimeout {
+					s.logger.Printf("MJPEG stream: No frames timeout, closing connection")
+					return
+				}
+				continue
+			}
+			noFrameCount = 0
+
+			// Write frame to stream
+			_, err := fmt.Fprintf(w, "--%s\r\n", boundary)
+			if err != nil {
+				return
+			}
+			_, err = fmt.Fprintf(w, "Content-Type: image/jpeg\r\n")
+			if err != nil {
+				return
+			}
+			_, err = fmt.Fprintf(w, "Content-Length: %d\r\n\r\n", len(frameData))
+			if err != nil {
+				return
+			}
+			_, err = w.Write(frameData)
+			if err != nil {
+				return
+			}
+			_, err = fmt.Fprintf(w, "\r\n")
+			if err != nil {
+				return
+			}
+			
+			flusher.Flush()
+			frameCount++
+			
+			if frameCount%StreamLogInterval == 0 {
+				s.logger.Debugf("MJPEG stream: sent %d frames", frameCount)
+			}
+		}
+	}
 }
 
 func (s *APIServer) listVideoFiles() ([]VideoInfo, error) {
@@ -421,8 +482,8 @@ func (s *APIServer) listVideoFiles() ([]VideoInfo, error) {
 			continue
 		}
 
-		// Rough estimate: bytes / (bitrate * 128) = seconds
-		duration := int(info.Size() / int64(s.config.VideoBitrate*128))
+		// Rough estimate: bytes / (bitrate * multiplier) = seconds
+		duration := int(info.Size() / int64(s.config.VideoBitrate*BitrateToStorageMultiplier))
 
 		videos = append(videos, VideoInfo{
 			Name:     entry.Name(),
@@ -441,7 +502,7 @@ func (s *APIServer) listVideoFiles() ([]VideoInfo, error) {
 	return videos, nil
 }
 
-func (s *APIServer) handleGenerateAVI(w http.ResponseWriter, r *http.Request) {
+func (s *APIServer) handleGenerateVideo(w http.ResponseWriter, r *http.Request) {
 	startStr := r.URL.Query().Get("start")
 	endStr := r.URL.Query().Get("end")
 
@@ -477,7 +538,7 @@ func (s *APIServer) handleGenerateAVI(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		name := entry.Name()
-		if !strings.HasSuffix(name, ".mjpeg") {
+		if !IsMJPEGFile(name) {
 			continue
 		}
 
@@ -504,10 +565,57 @@ func (s *APIServer) handleGenerateAVI(w http.ResponseWriter, r *http.Request) {
 		return iInfo.ModTime().Before(jInfo.ModTime())
 	})
 
-	// Create concat file
-	concatFile := filepath.Join(s.config.VideoDir, ".concat_list.txt")
+	// Create temporary directory for working files (prevents race with storage cleanup)
+	tempDir := filepath.Join(s.config.VideoDir, fmt.Sprintf(".temp_export_%d", time.Now().Unix()))
+	if err := os.MkdirAll(tempDir, 0755); err != nil {
+		http.Error(w, "Failed to create temp directory", http.StatusInternalServerError)
+		return
+	}
+	defer os.RemoveAll(tempDir)
+
+	// Copy MJPEG files to temp directory to prevent deletion during export
+	s.logger.Printf("Copying %d MJPEG files to temporary directory...", len(mjpegFiles))
+	var tempFiles []string
+	for i, srcPath := range mjpegFiles {
+		tempPath := filepath.Join(tempDir, fmt.Sprintf("segment_%03d.mjpeg", i))
+		
+		src, err := os.Open(srcPath)
+		if err != nil {
+			// File may have been deleted by storage cleanup - continue with remaining files
+			s.logger.Printf("Warning: Could not open %s: %v", filepath.Base(srcPath), err)
+			continue
+		}
+		
+		dst, err := os.Create(tempPath)
+		if err != nil {
+			src.Close()
+			http.Error(w, "Failed to create temp file", http.StatusInternalServerError)
+			return
+		}
+		
+		_, copyErr := io.Copy(dst, src)
+		src.Close()
+		dst.Close()
+		
+		if copyErr != nil {
+			http.Error(w, "Failed to copy file", http.StatusInternalServerError)
+			return
+		}
+		
+		tempFiles = append(tempFiles, tempPath)
+	}
+
+	if len(tempFiles) == 0 {
+		http.Error(w, "No videos could be copied (may have been deleted)", http.StatusNotFound)
+		return
+	}
+
+	s.logger.Printf("Successfully copied %d/%d files", len(tempFiles), len(mjpegFiles))
+
+	// Create concat file using temp files
+	concatFile := filepath.Join(tempDir, "concat_list.txt")
 	var concatContent strings.Builder
-	for _, file := range mjpegFiles {
+	for _, file := range tempFiles {
 		concatContent.WriteString(fmt.Sprintf("file '%s'\n", file))
 	}
 
@@ -515,10 +623,13 @@ func (s *APIServer) handleGenerateAVI(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Failed to create concat file", http.StatusInternalServerError)
 		return
 	}
-	defer os.Remove(concatFile)
 
-	// Generate AVI using ffmpeg concat with re-encoding to h264
-	outputFile := filepath.Join(s.config.VideoDir, ".temp_output.avi")
+	// Generate MP4 using ffmpeg concat with MPEG-4 encoding at native quality/FPS
+	outputFile := filepath.Join(tempDir, "output.mp4")
+	
+	s.logger.Printf("Generating video from %d MJPEG segments at %dx%d@%dfps", 
+		len(tempFiles), s.config.VideoResWidth, s.config.VideoResHeight, s.config.VideoFPS)
+	
 	cmd := exec.Command(
 		"ffmpeg",
 		"-y",
@@ -526,25 +637,103 @@ func (s *APIServer) handleGenerateAVI(w http.ResponseWriter, r *http.Request) {
 		"-f", "concat",
 		"-safe", "0",
 		"-i", concatFile,
+		// MPEG-4 encoding with high quality (native FFmpeg encoder)
 		"-c:v", "mpeg4",
-		"-b:v", fmt.Sprintf("%dk", s.config.AVIBitrate),
-		"-q:v", "5",
-		"-f", "avi",
+		"-q:v", fmt.Sprintf("%d", ExportVideoQuality), // Quality: 1-31 (lower=better)
+		"-r", fmt.Sprintf("%d", s.config.VideoFPS), // Force output framerate to match recording
+		"-fps_mode", "cfr", // Constant framerate (pad/drop frames as needed)
+		"-movflags", "+faststart", // Enable streaming
+		"-f", "mp4",
 		outputFile,
 	)
 
-	if err := cmd.Run(); err != nil {
-		http.Error(w, "Failed to generate video", http.StatusInternalServerError)
+	// Capture stderr for debugging
+	var stderrBuf strings.Builder
+	cmd.Stderr = &stderrBuf
+
+	s.logger.Printf("Starting FFmpeg encoding of %d segments...", len(tempFiles))
+	
+	// Start FFmpeg
+	if err := cmd.Start(); err != nil {
+		http.Error(w, fmt.Sprintf("Failed to start encoding: %v", err), http.StatusInternalServerError)
 		return
 	}
-	defer os.Remove(outputFile)
 
-	// Stream the file as download
-	w.Header().Set("Content-Type", "video/avi")
-	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=dashcam_%s.avi", time.Now().Format("2006-01-02")))
+	// Monitor progress in background
+	done := make(chan error, 1)
+	go func() {
+		done <- cmd.Wait()
+	}()
+
+	// Log progress while encoding
+	progressTicker := time.NewTicker(5 * time.Second)
+	defer progressTicker.Stop()
+	
+	lastSize := int64(0)
+	for {
+		select {
+		case err := <-done:
+			// Encoding finished
+			if err != nil {
+				s.logger.Printf("FFmpeg error: %s", stderrBuf.String())
+				http.Error(w, fmt.Sprintf("Failed to generate video: %v", err), http.StatusInternalServerError)
+				return
+			}
+			s.logger.Printf("FFmpeg encoding complete!")
+			goto encodingDone
+		case <-progressTicker.C:
+			// Check output file size for progress indication
+			if info, err := os.Stat(outputFile); err == nil {
+				sizeMB := float64(info.Size()) / BytesPerMB
+				speedMBps := float64(info.Size()-lastSize) / BytesPerMB / 5.0
+				s.logger.Printf("Encoding progress: %.1f MB (%.1f MB/s)", sizeMB, speedMBps)
+				lastSize = info.Size()
+			}
+		}
+	}
+encodingDone:
+
+	// Verify output file exists and has content
+	info, err := os.Stat(outputFile)
+	if err != nil {
+		s.logger.Printf("Output file not found: %v", err)
+		http.Error(w, "Generated video file not found", http.StatusInternalServerError)
+		return
+	}
+	
+	if info.Size() == 0 {
+		s.logger.Printf("Output file is empty")
+		http.Error(w, "Generated video file is empty", http.StatusInternalServerError)
+		return
+	}
+
+	s.logger.Printf("Generated video: %.2f MB at %dx%d@%dfps", 
+		float64(info.Size())/BytesPerMB,
+		s.config.VideoResWidth, s.config.VideoResHeight, s.config.VideoFPS)
+
+	// Open file for reading
+	file, err := os.Open(outputFile)
+	if err != nil {
+		s.logger.Printf("Failed to open output file: %v", err)
+		http.Error(w, "Failed to open generated video", http.StatusInternalServerError)
+		return
+	}
+	defer file.Close()
+
+	// Set headers
+	w.Header().Set("Content-Type", "video/mp4")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=dashcam_%s.mp4", time.Now().Format("2006-01-02")))
+	w.Header().Set("Content-Length", fmt.Sprintf("%d", info.Size()))
 	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
 
-	http.ServeFile(w, r, outputFile)
+	// Copy file to response
+	written, err := io.Copy(w, file)
+	if err != nil {
+		s.logger.Printf("Error streaming video: %v (wrote %d bytes)", err, written)
+		return
+	}
+	
+	s.logger.Printf("Successfully streamed %d bytes to client", written)
 }
 
 var startTime = time.Now()

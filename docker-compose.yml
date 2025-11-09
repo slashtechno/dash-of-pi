@@ -18,6 +18,11 @@ services:
       - dashcam-videos:/var/lib/pi-dashcam/videos
       # Mount config
       - dashcam-config:/etc/pi-dashcam
+      # Use tmpfs for temporary stream files (faster I/O)
+      - type: tmpfs
+        target: /tmp
+        tmpfs:
+          size: 100M
     environment:
       - LOG_LEVEL=info
     devices:
@@ -28,6 +33,12 @@ services:
       - /dev/video0:/dev/video0:rw
     # Run with privileged mode to access camera devices
     privileged: true
+    # Increase shared memory for better performance
+    shm_size: '256mb'
+    # CPU and memory limits (adjust based on your system)
+    # Uncomment and adjust if needed
+    # cpus: '2.0'
+    # mem_limit: 1g
     networks:
       - dashcam-network
 

@@ -77,14 +77,13 @@ func (c *Camera) Start(videoDir string) error {
 }
 
 // recordAndStreamSegment records to file AND streams JPEG frames
-// Captures video to a temporary file, then re-encodes for streaming while recording
 func (c *Camera) recordAndStreamSegment(filename string) error {
 	// Get camera input based on OS
 	inputFormat, inputDevice := c.getCameraInput()
 
-	// Start recording to MJPEG file with proper framerate metadata
 	recordCmd := exec.Command(
 		"ffmpeg",
+		"-y",
 		"-loglevel", "warning",
 		"-f", inputFormat,
 		"-framerate", fmt.Sprintf("%d", c.config.VideoFPS),
@@ -117,7 +116,7 @@ func (c *Camera) recordAndStreamSegment(filename string) error {
 	// Capture ffmpeg stderr to help diagnose issues
 	var stderrOutput strings.Builder
 	go func() {
-		buf := make([]byte, 4096)
+		buf := make([]byte, FFmpegStderrBufferKB*BytesPerKB)
 		for {
 			n, err := stderr.Read(buf)
 			if n > 0 {
@@ -131,34 +130,33 @@ func (c *Camera) recordAndStreamSegment(filename string) error {
 
 	// Extract frames from the MJPEG file as it's being written
 	go func() {
-		ticker := time.NewTicker(500 * time.Millisecond)
+		ticker := time.NewTicker(time.Duration(FrameExtractionMS) * time.Millisecond)
 		defer ticker.Stop()
 		frameCount := int64(0)
-		failCount := 0
+		var lastFrameHash uint64 // Simple hash to detect duplicates
 
 		for {
 			select {
 			case <-ticker.C:
 				frameData := c.extractFrameFromMJPEG(filename)
-				if frameData != nil && len(frameData) > 0 && c.streamManager != nil {
-					c.streamManager.UpdateFrame(frameData)
-					frameCount++
-					failCount = 0
-					if frameCount%4 == 0 {
-						c.logger.Debugf("✓ Frame %d (%d bytes)", frameCount, len(frameData))
+				if len(frameData) > 0 && c.streamManager != nil {
+					// Compute simple hash to detect duplicate frames
+					// Using first/last bytes and length as a quick hash
+					frameHash := uint64(len(frameData))
+					if len(frameData) >= 16 {
+						frameHash ^= uint64(frameData[0])<<56 | uint64(frameData[8])<<32 | 
+									 uint64(frameData[len(frameData)-8])<<16 | uint64(frameData[len(frameData)-1])
 					}
-				} else {
-					failCount++
-					if failCount == 1 || failCount == 3 {
-						info, _ := os.Stat(filename)
-						fileSize := int64(0)
-						if info != nil {
-							fileSize = info.Size()
-						}
-						c.logger.Debugf("⏳ Waiting for frames... (file: %d bytes, attempt %d)", fileSize, failCount)
+					
+					// Only update if frame changed
+					if frameHash != lastFrameHash {
+						c.streamManager.UpdateFrame(frameData)
+						lastFrameHash = frameHash
+						frameCount++
 					}
 				}
 			case <-time.After(time.Duration(c.config.SegmentLengthS) * time.Second):
+				c.logger.Debugf("Segment complete: extracted %d unique frames", frameCount)
 				return
 			}
 		}
@@ -187,30 +185,27 @@ func (c *Camera) extractFrameFromMJPEG(filename string) []byte {
 	}
 	defer file.Close()
 
-	// Get file info
 	info, err := file.Stat()
 	if err != nil {
 		return nil
 	}
 
 	fileSize := info.Size()
-	if fileSize < 100 {
+	if fileSize < MinFileSize {
 		return nil
 	}
 
-	// For large files, read from near the end to get the most recent frame
-	readSize := int64(1024 * 1024) // 1MB
+	// Read last portion of file for frame extraction
+	readSize := int64(FrameBufferSizeKB * BytesPerKB)
 	if fileSize < readSize {
 		readSize = fileSize
 	}
 
-	// Seek to near the end
 	_, err = file.Seek(-readSize, 2)
 	if err != nil {
 		return nil
 	}
 
-	// Read the end portion
 	buf := make([]byte, readSize)
 	n, err := file.Read(buf)
 	if err != nil && err != io.EOF {
@@ -221,116 +216,38 @@ func (c *Camera) extractFrameFromMJPEG(filename string) []byte {
 		return nil
 	}
 
-	// Find the last complete JPEG frame in this buffer
-	// Search backwards from the end
+	// Find the LAST complete JPEG frame by searching backwards from end
+	// Step 1: Find the most recent JPEG end marker (0xFF 0xD9)
 	lastFrameEnd := -1
-	lastFrameStart := -1
-
-	// Find the last 0xFF 0xD9 (JPEG end)
 	for i := n - 2; i >= 0; i-- {
 		if buf[i] == 0xFF && buf[i+1] == 0xD9 {
-			lastFrameEnd = i + 1
+			lastFrameEnd = i + 2
 			break
 		}
 	}
 
 	if lastFrameEnd == -1 {
-		return nil
+		return nil // No complete frame found
 	}
 
-	// Find the 0xFF 0xD8 (JPEG start) before that end
-	for i := lastFrameEnd - 2; i >= 0; i-- {
+	// Step 2: Search backwards from end marker to find matching start marker
+	// Limit search to MaxFrameSizeKB to avoid finding old frames (prevents rubber-banding)
+	searchLimit := lastFrameEnd - (MaxFrameSizeKB * BytesPerKB)
+	if searchLimit < 0 {
+		searchLimit = 0
+	}
+
+	for i := lastFrameEnd - 2; i >= searchLimit; i-- {
 		if buf[i] == 0xFF && buf[i+1] == 0xD8 {
-			lastFrameStart = i
-			break
+			// Found frame start - extract and return
+			frameSize := lastFrameEnd - i
+			frameData := make([]byte, frameSize)
+			copy(frameData, buf[i:lastFrameEnd])
+			return frameData
 		}
 	}
 
-	if lastFrameStart != -1 && lastFrameEnd > lastFrameStart {
-		frameData := make([]byte, lastFrameEnd-lastFrameStart)
-		copy(frameData, buf[lastFrameStart:lastFrameEnd])
-		return frameData
-	}
-
-	return nil
-}
-
-
-
-
-
-// ConvertMJPEGToAVI converts MJPEG to AVI with proper framerate metadata (no re-encoding)
-func (c *Camera) ConvertMJPEGToAVI(mjpegFile string) {
-	// Create output filename by replacing .mjpeg with .avi
-	aviFile := strings.TrimSuffix(mjpegFile, ".mjpeg") + ".avi"
-
-	// Use ffmpeg to re-mux MJPEG to AVI with framerate info, no re-encoding
-	cmd := exec.Command(
-		"ffmpeg",
-		"-y",
-		"-loglevel", "warning",
-		"-framerate", fmt.Sprintf("%d", c.config.VideoFPS),
-		"-i", mjpegFile,
-		"-c", "copy",
-		"-f", "avi",
-		aviFile,
-	)
-
-	// Suppress output but capture errors
-	var stderr strings.Builder
-	cmd.Stderr = &stderr
-
-	if err := cmd.Run(); err != nil {
-		// Log error but don't fail - MJPEG file is still good for recovery
-		c.logger.Printf("Warning: failed to convert MJPEG to AVI: %v", err)
-		if stderr.Len() > 0 {
-			c.logger.Printf("ffmpeg stderr: %s", stderr.String())
-		}
-	}
-}
-
-// readJPEGFrame reads a single JPEG frame from a stream
-func readJPEGFrame(r interface{ Read([]byte) (int, error) }, buf []byte) ([]byte, error) {
-	var frameBytes []byte
-	foundStart := false
-	readCount := 0
-	maxRead := len(buf) * 10 // Allow multiple buffer reads
-
-	for readCount < maxRead {
-		n, err := r.Read(buf)
-		if err != nil {
-			return nil, err
-		}
-
-		data := buf[:n]
-
-		for i := 0; i < len(data)-1; i++ {
-			if !foundStart && data[i] == 0xFF && data[i+1] == 0xD8 {
-				// Found JPEG start
-				foundStart = true
-				frameBytes = append(frameBytes, data[i:]...)
-				i++
-				continue
-			}
-
-			if foundStart {
-				frameBytes = append(frameBytes, data[i])
-
-				if i < len(data)-1 && data[i] == 0xFF && data[i+1] == 0xD9 {
-					// Found JPEG end
-					frameBytes = append(frameBytes, data[i+1])
-					return frameBytes, nil
-				}
-			}
-		}
-
-		readCount++
-	}
-
-	if foundStart {
-		return frameBytes, nil
-	}
-	return nil, fmt.Errorf("no JPEG found")
+	return nil // No matching start marker found
 }
 
 // getCameraInput returns the format and device based on OS
@@ -361,13 +278,12 @@ func (c *Camera) Stop() {
 
 // StreamManager handles HTTP streaming of video to clients
 type StreamManager struct {
-	logger    *Logger
-	config    *Config
-	done      chan struct{}
-	stopOnce  sync.Once
-	mu        sync.RWMutex
-	frameJPG  []byte
-	videoDir  string
+	logger   *Logger
+	config   *Config
+	done     chan struct{}
+	stopOnce sync.Once
+	mu       sync.RWMutex
+	frameJPG []byte
 }
 
 func NewStreamManager(config *Config, logger *Logger) *StreamManager {
@@ -400,34 +316,6 @@ func (sm *StreamManager) UpdateFrame(frameData []byte) {
 	}
 }
 
-// UpdateFrameCount is a legacy method for compatibility
-func (sm *StreamManager) UpdateFrameCount(count int64) {
-	// Noop
-}
-
-// ServeHTTP serves video over HTTP
-func (sm *StreamManager) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "video/mp4")
-	w.Header().Set("Cache-Control", "no-cache")
-	http.Error(w, "Live streaming requires HLS setup", http.StatusNotImplemented)
-}
-
-// ServeStreamM3U8 serves HLS manifest
-func (sm *StreamManager) ServeStreamM3U8(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
-	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
-
-	manifest := `#EXTM3U
-#EXT-X-VERSION:3
-#EXT-X-TARGETDURATION:1
-#EXT-X-MEDIA-SEQUENCE:0
-#EXTINF:1.0,
-/api/stream/ts
-#EXT-X-ENDLIST
-`
-	w.Write([]byte(manifest))
-}
-
 // ServeJPEG returns the latest frame as JPEG
 func (sm *StreamManager) ServeJPEG(w http.ResponseWriter, r *http.Request) {
 	sm.mu.RLock()
@@ -456,14 +344,4 @@ func (sm *StreamManager) GetLatestFrame() []byte {
 	frame := make([]byte, len(sm.frameJPG))
 	copy(frame, sm.frameJPG)
 	return frame
-}
-
-// AddClient is for compatibility
-func (sm *StreamManager) AddClient(conn interface{}) {
-	sm.logger.Printf("Stream client connected")
-}
-
-// RemoveClient is for compatibility
-func (sm *StreamManager) RemoveClient(conn interface{}) {
-	sm.logger.Printf("Stream client disconnected")
 }

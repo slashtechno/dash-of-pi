@@ -10,19 +10,18 @@ import (
 )
 
 type Config struct {
-	Port           int    `json:"port"`
-	StreamPort     int    `json:"stream_port"`  // UDP port for live stream from FFmpeg
-	VideoDir       string `json:"video_dir"`
-	StorageCapGB   int    `json:"storage_cap_gb"`
-	AuthToken      string `json:"auth_token"`
-	VideoBitrate   int    `json:"video_bitrate"`   // in kbps
-	VideoFPS       int    `json:"video_fps"`
-	VideoResWidth  int    `json:"video_res_width"`
-	VideoResHeight int    `json:"video_res_height"`
-	SegmentLengthS int    `json:"segment_length_s"` // seconds
-	CameraDevice   string `json:"camera_device"`    // e.g., /dev/video0, /dev/video1
-	MJPEGQuality   int    `json:"mjpeg_quality"`    // 1-10, lower = higher quality (default 5)
-	AVIBitrate     int    `json:"avi_bitrate"`      // in kbps, for on-demand AVI generation (default 1024)
+	Port             int    `json:"port"`
+	StreamPort       int    `json:"stream_port"`  // UDP port for live stream from FFmpeg
+	VideoDir         string `json:"video_dir"`
+	StorageCapGB     int    `json:"storage_cap_gb"`
+	AuthToken        string `json:"auth_token"`
+	VideoBitrate     int    `json:"video_bitrate"`   // in kbps
+	VideoFPS         int    `json:"video_fps"`
+	VideoResWidth    int    `json:"video_res_width"`
+	VideoResHeight   int    `json:"video_res_height"`
+	SegmentLengthS   int    `json:"segment_length_s"` // seconds
+	CameraDevice     string `json:"camera_device"`    // e.g., /dev/video0, /dev/video1
+	MJPEGQuality     int    `json:"mjpeg_quality"`    // 2-31, lower = higher quality (default 5)
 }
 
 func DefaultConfig() *Config {
@@ -37,18 +36,17 @@ func DefaultConfig() *Config {
 	stateDir = filepath.Dir(stateDir)
 
 	return &Config{
-		Port:           8080,
-		StreamPort:     5000, // UDP port for FFmpeg stream output
-		VideoDir:       stateDir,
-		StorageCapGB:   10,
-		VideoBitrate:   1024,
-		VideoFPS:       24,
-		VideoResWidth:  1280,
-		VideoResHeight: 720,
-		SegmentLengthS: 60,
-		CameraDevice:   "/dev/video0",
-		MJPEGQuality:   5,  // 1-10, lower = higher quality
-		AVIBitrate:     1024, // kbps for on-demand AVI
+		Port:            DefaultPort,
+		StreamPort:      DefaultStreamPort,
+		VideoDir:        stateDir,
+		StorageCapGB:    DefaultStorageCapGB,
+		VideoBitrate:    DefaultVideoBitrate,
+		VideoFPS:        DefaultVideoFPS,
+		VideoResWidth:   DefaultVideoWidth,
+		VideoResHeight:  DefaultVideoHeight,
+		SegmentLengthS:  DefaultSegmentLengthS,
+		CameraDevice:    DefaultCameraDevice,
+		MJPEGQuality:    DefaultMJPEGQuality,
 	}
 }
 
@@ -67,13 +65,10 @@ func LoadOrCreateConfig(configPath string) (*Config, error) {
 
 		// Set defaults for new fields if missing
 		if config.StreamPort == 0 {
-			config.StreamPort = 5000
+			config.StreamPort = DefaultStreamPort
 		}
 		if config.MJPEGQuality == 0 {
-			config.MJPEGQuality = 5
-		}
-		if config.AVIBitrate == 0 {
-			config.AVIBitrate = 1024
+			config.MJPEGQuality = DefaultMJPEGQuality
 		}
 
 		return config, nil

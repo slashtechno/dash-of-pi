@@ -2,6 +2,7 @@
 
 # Merge all MJPEG files in a directory into a single video file
 # Usage: ./merge-mjpeg.sh [directory] [output-file]
+# On the same machine: ./scripts/merge-mjpeg.sh ~/.local/state/dash-of-pi merged_dashcam.mp4
 
 VIDEO_DIR="${1:-$HOME/.local/state/dash-of-pi/videos}"
 OUTPUT_FILE="${2:-merged_dashcam.mp4}"
@@ -41,14 +42,35 @@ for file in "${MJPEG_FILES[@]}"; do
     echo "file '$file'" >> "$CONCAT_FILE"
 done
 
-echo "Merging files..."
-ffmpeg -f concat -safe 0 -i "$CONCAT_FILE" -c copy -framerate 24 "$OUTPUT_FILE"
+echo "Merging files with MPEG-4 encoding..."
+echo "(This will take a while for large videos...)"
+echo ""
+
+# Use MPEG-4 encoding with high quality (same as server export)
+# Matches server.go MP4 generation exactly
+# -q:v 2 = quality 2 (lower=better, range 1-31)
+# -r 30 = force 30 fps output
+# -fps_mode cfr = constant framerate
+# -loglevel warning = show progress and actual warnings (PTS/DTS drops are expected)
+ffmpeg -y \
+    -loglevel warning \
+    -f concat \
+    -safe 0 \
+    -i "$CONCAT_FILE" \
+    -c:v mpeg4 \
+    -q:v 2 \
+    -r 30 \
+    -fps_mode cfr \
+    -movflags +faststart \
+    -f mp4 \
+    "$OUTPUT_FILE"
 
 if [ $? -eq 0 ]; then
     SIZE=$(du -h "$OUTPUT_FILE" | cut -f1)
     echo ""
     echo "✓ Merge complete: $OUTPUT_FILE ($SIZE)"
 else
+    echo ""
     echo "✗ Merge failed"
     exit 1
 fi

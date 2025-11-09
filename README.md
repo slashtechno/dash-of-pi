@@ -31,11 +31,11 @@ docker-compose up -d
 - Video is recorded as **MJPEG** files (.mjpeg) with frame-level atomicity, ensuring data integrity even if power fails mid-recording
 - MJPEG is a sequence of JPEG-compressed frames with configurable quality (see `mjpeg_quality` config)
 
-**On-Demand AVI Generation:**
-- Use the dashboard "Generate Video" section to create downloadable AVI files on-demand
-- Choose either **Lifetime** (all MJPEG files) or **Custom Date Range**
-- AVI files are re-encoded using MPEG-4 codec at configurable bitrate (see `avi_bitrate` config)
-- Generated AVI files are streamed directly to the user and not stored on disk
+**On-Demand MP4 Generation:**
+- Use the dashboard "Generate Video" section to create downloadable MP4 files on-demand
+- Select either "Lifetime" (all footage) or custom date range
+- MP4 files are re-encoded using MPEG-4 codec at high quality (q=2)
+- Generated MP4 files are streamed directly to the user and not stored on disk
 
 **Storage Accounting:**
 - Only MJPEG files count toward the storage cap
@@ -68,8 +68,7 @@ Config stored at `~/.config/dash-of-pi/config.json`:
   "video_res_height": 720,
   "segment_length_s": 60,
   "camera_device": "/dev/video0",
-  "mjpeg_quality": 5,
-  "avi_bitrate": 1024
+  "mjpeg_quality": 5
 }
 ```
 
@@ -77,19 +76,19 @@ Key settings:
 - `camera_device`: Video input device (e.g., `/dev/video0`, `/dev/video1`)
 - `storage_cap_gb`: Max disk usage before deleting oldest videos
 - `segment_length_s`: Recording segment duration in seconds
-- `mjpeg_quality`: MJPEG recording quality (1-10, default 5; lower = higher quality, higher storage)
-  - Recommended: 5 (balanced), 3-4 (high quality for important footage), 7-8 (low quality for long-term storage)
-- `avi_bitrate`: Bitrate for on-demand AVI generation in kbps (default 1024)
-  - Recommended: 1024 (good balance), 512 (smaller files for slow connections), 2000-4000 (high quality)
+- `mjpeg_quality`: MJPEG recording quality (2-31, default 5; lower = higher quality, higher storage)
+  - Recommended: 5 (balanced), 3-4 (high quality), 7-8 (low quality for long-term storage)
+- `video_fps`: Recording framerate (default 24, can be increased to 30)
+- `video_bitrate`: Not used for MP4 export (uses quality setting instead)
 
 Restart service to apply changes.
 
 ## Dashboard
 
 - **Generate Video Section:**
-  - **Lifetime:** Creates AVI from all stored MJPEG files
-  - **Custom Date Range:** Creates AVI from MJPEG files within specified dates
-  - AVI file is re-encoded during generation and streamed directly (not stored)
+  - **Lifetime:** Creates MP4 from all stored MJPEG files
+  - **Custom Date Range:** Creates MP4 from MJPEG files within specified dates
+  - MP4 file is re-encoded during generation and streamed directly (not stored)
 
 ## Troubleshooting
 
@@ -114,9 +113,10 @@ curl http://localhost:8080/health
 cat ~/.config/dash-of-pi/config.json | grep auth_token
 ```
 
-**AVI generation is slow:**
-- Reduce `avi_bitrate` in config (lower bitrate = faster re-encoding)
-- Example: Set `"avi_bitrate": 512` for 2x faster generation with smaller files
+**MP4 generation is slow:**
+- MP4 generation uses high quality (q=2) and may take several minutes for large date ranges
+- Check server logs for encoding progress (shows MB/s and frames processed)
+- Encoding speed depends on CPU - typically processes at 5-7x realtime speed
 
 ## Hardware Requirements
 
