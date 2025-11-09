@@ -83,7 +83,7 @@ func (c *Camera) recordAndStreamSegment(filename string) error {
 
 	// Build video filter chain
 	videoFilter := fmt.Sprintf("scale=%d:%d", c.config.VideoResWidth, c.config.VideoResHeight)
-	if c.config.EnableTimestamp {
+	if c.config.EnableTimestamp != nil && *c.config.EnableTimestamp {
 		// Add timestamp overlay using drawtext filter
 		// Try multiple font paths for compatibility across different systems
 		fontPath := c.findAvailableFont()

@@ -21,7 +21,7 @@ type Config struct {
 	SegmentLengthS    int    `json:"segment_length_s"` // seconds
 	CameraDevice      string `json:"camera_device"`    // e.g., /dev/video0, /dev/video1
 	MJPEGQuality      int    `json:"mjpeg_quality"`    // 2-31, lower = higher quality (default 5)
-	EnableTimestamp   bool   `json:"enable_timestamp"` // Enable timestamp overlay on video
+	EnableTimestamp   *bool  `json:"enable_timestamp,omitempty"` // Enable timestamp overlay on video
 }
 
 func DefaultConfig() *Config {
@@ -35,6 +35,7 @@ func DefaultConfig() *Config {
 	// Remove the "videos" part from stateDir since StateFile adds it
 	stateDir = filepath.Dir(stateDir)
 
+	enableTimestamp := true
 	return &Config{
 		Port:            DefaultPort,
 		VideoDir:        stateDir,
@@ -46,7 +47,7 @@ func DefaultConfig() *Config {
 		SegmentLengthS:  DefaultSegmentLengthS,
 		CameraDevice:    DefaultCameraDevice,
 		MJPEGQuality:    DefaultMJPEGQuality,
-		EnableTimestamp: true, // Default to enabled
+		EnableTimestamp: &enableTimestamp, // Default to enabled
 	}
 }
 
@@ -66,6 +67,10 @@ func LoadOrCreateConfig(configPath string) (*Config, error) {
 		// Set defaults for new fields if missing
 		if config.MJPEGQuality == 0 {
 			config.MJPEGQuality = DefaultMJPEGQuality
+		}
+		if config.EnableTimestamp == nil {
+			enableTimestamp := true
+			config.EnableTimestamp = &enableTimestamp
 		}
 
 		return config, nil
