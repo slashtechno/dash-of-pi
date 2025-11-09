@@ -114,11 +114,15 @@ func (c *Camera) recordAndStreamSegment(filename string) error {
 		return err
 	}
 
-	// Suppress ffmpeg stderr (only warnings/errors will be shown due to -loglevel warning)
+	// Capture ffmpeg stderr to help diagnose issues
+	var stderrOutput strings.Builder
 	go func() {
 		buf := make([]byte, 4096)
 		for {
-			_, err := stderr.Read(buf)
+			n, err := stderr.Read(buf)
+			if n > 0 {
+				stderrOutput.Write(buf[:n])
+			}
 			if err != nil {
 				break
 			}
@@ -166,6 +170,11 @@ func (c *Camera) recordAndStreamSegment(filename string) error {
 	c.cmdMu.Lock()
 	c.recordCmd = nil
 	c.cmdMu.Unlock()
+
+	// Log ffmpeg errors if recording failed
+	if recordErr != nil && stderrOutput.Len() > 0 {
+		c.logger.Printf("FFmpeg error output: %s", stderrOutput.String())
+	}
 
 	return recordErr
 }

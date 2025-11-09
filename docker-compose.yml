@@ -1,13 +1,14 @@
-version: '3.8'
-
 services:
   pi-dashcam:
     build:
       context: .
       dockerfile: Dockerfile
+      # args:
+        # GOARCH: arm
+        # GOARM: 7
       args:
-        GOARCH: arm
-        GOARM: 7
+          GOARCH: amd64
+          GOOS: linux
     container_name: pi-dashcam
     restart: unless-stopped
     ports:
@@ -20,14 +21,13 @@ services:
     environment:
       - LOG_LEVEL=info
     devices:
-      # Raspberry Pi Camera
-      - /dev/vcsm-cma:/dev/vcsm-cma
-      - /dev/vchiq:/dev/vchiq
-      - /dev/video0:/dev/video0
-    cap_add:
-      - SYS_ADMIN
-    security_opt:
-      - apparmor=unconfined
+      # Raspberry Pi Camera?
+      # - /dev/vcsm-cma:/dev/vcsm-cma
+      # - /dev/vchiq:/dev/vchiq
+      # Mount with read-write permissions
+      - /dev/video0:/dev/video0:rw
+    # Run with privileged mode to access camera devices
+    privileged: true
     networks:
       - dashcam-network
 
