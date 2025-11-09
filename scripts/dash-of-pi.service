@@ -1,5 +1,5 @@
 [Unit]
-Description=Pi DashCam - Raspberry Pi Dash Camera Service
+Description=Dash of Pi - Raspberry Pi Dash Camera Service
 After=network.target
 StartLimitIntervalSec=0
 
@@ -10,19 +10,19 @@ RestartSec=10
 StartLimitBurst=5
 
 # User and group
-User=pi-dashcam
-Group=pi-dashcam
+User=dash-of-pi
+Group=dash-of-pi
 
 # Working directory
-WorkingDirectory=/opt/pi-dashcam
+WorkingDirectory=/var/lib/dash-of-pi
 
 # Executable
-ExecStart=/opt/pi-dashcam/bin/pi-dashcam -config /etc/pi-dashcam/config.json -v
+ExecStart=/usr/local/bin/dash-of-pi -config /etc/dash-of-pi/config.json -v
 
 # Logging
 StandardOutput=journal
 StandardError=journal
-SyslogIdentifier=pi-dashcam
+SyslogIdentifier=dash-of-pi
 
 # Resource limits
 LimitNOFILE=65536

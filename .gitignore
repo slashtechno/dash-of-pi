@@ -7,7 +7,6 @@ merged_dashcam.mp4
 
 # Binaries
 /dash-of-pi
-/pi-dashcam
 *.exe
 *.exe~
 *.dll

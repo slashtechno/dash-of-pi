@@ -321,55 +321,6 @@ func (s *APIServer) handleGetConfig(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// getLatestVideoFile returns the path to the most recent completed video segment
-func (s *APIServer) getLatestVideoFile() string {
-	entries, err := os.ReadDir(s.config.VideoDir)
-	if err != nil {
-		return ""
-	}
-
-	type fileInfo struct {
-		name    string
-		modTime time.Time
-		path    string
-	}
-	var files []fileInfo
-
-	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
-		name := entry.Name()
-		if !HasExtension(name, ExtensionMP4) {
-			continue
-		}
-		info, err := entry.Info()
-		if err != nil {
-			continue
-		}
-		files = append(files, fileInfo{
-			name:    name,
-			modTime: info.ModTime(),
-			path:    filepath.Join(s.config.VideoDir, name),
-		})
-	}
-
-	if len(files) == 0 {
-		return ""
-	}
-
-	// Sort by modification time (newest first)
-	sort.Slice(files, func(i, j int) bool {
-		return files[i].modTime.After(files[j].modTime)
-	})
-
-	// Return the second-newest file (previous/completed segment) to avoid reading currently-recording file
-	if len(files) > 1 {
-		return files[1].path
-	}
-	return files[0].path
-}
-
 // handleStreamFrame serves the latest JPEG frame from the live stream
 func (s *APIServer) handleStreamFrame(w http.ResponseWriter, r *http.Request) {
 	// Get latest frame from stream manager

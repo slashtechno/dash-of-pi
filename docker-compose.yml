@@ -1,5 +1,5 @@
 services:
-  pi-dashcam:
+  dash-of-pi:
     build:
       context: .
       dockerfile: Dockerfile
@@ -9,15 +9,15 @@ services:
       args:
           GOARCH: amd64
           GOOS: linux
-    container_name: pi-dashcam
+    container_name: dash-of-pi
     restart: unless-stopped
     ports:
       - "8080:8080"
     volumes:
       # Mount video directory to host
-      - dashcam-videos:/var/lib/pi-dashcam/videos
+      - dashcam-videos:/var/lib/dash-of-pi/videos
       # Mount config
-      - dashcam-config:/etc/pi-dashcam
+      - dashcam-config:/etc/dash-of-pi
       # Use tmpfs for temporary stream files (faster I/O)
       - type: tmpfs
         target: /tmp

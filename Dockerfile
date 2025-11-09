@@ -12,7 +12,7 @@ RUN go mod download
 COPY *.go ./
 
 # Build binary for current system
-RUN go build -ldflags="-s" -o pi-dashcam .
+RUN go build -ldflags="-s" -o dash-of-pi .
 
 # Runtime image
 FROM debian:bookworm-slim
@@ -26,12 +26,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 # Copy binary from builder
-COPY --from=builder /app/pi-dashcam .
+COPY --from=builder /app/dash-of-pi .
 
 # Create directories and expose port
-RUN mkdir -p /var/lib/pi-dashcam/videos /etc/pi-dashcam
+RUN mkdir -p /var/lib/dash-of-pi/videos /etc/dash-of-pi
 
 EXPOSE 8080
 
-ENTRYPOINT ["/app/pi-dashcam"]
-CMD ["-config", "/etc/pi-dashcam/config.json",
+ENTRYPOINT ["/app/dash-of-pi"]
+CMD ["-config", "/etc/dash-of-pi/config.json"]

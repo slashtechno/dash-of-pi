@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-echo "=== Pi DashCam Uninstallation ==="
+echo "=== Dash of Pi Uninstallation ==="
 echo
 
 # Check if running as root
@@ -19,26 +19,26 @@ if [[ ! $REPLY == "yes" ]]; then
 fi
 
 echo "[1/4] Stopping service..."
-systemctl stop pi-dashcam 2>/dev/null || true
-systemctl disable pi-dashcam 2>/dev/null || true
+systemctl stop dash-of-pi 2>/dev/null || true
+systemctl disable dash-of-pi 2>/dev/null || true
 
 echo "[2/4] Removing service file..."
-rm -f /etc/systemd/system/pi-dashcam.service
+rm -f /etc/systemd/system/dash-of-pi.service
 systemctl daemon-reload
 
 echo "[3/4] Removing installed files..."
-rm -rf /opt/pi-dashcam
+rm -f /usr/local/bin/dash-of-pi
 
 echo "[4/4] Removing user..."
-userdel pi-dashcam 2>/dev/null || true
+userdel dash-of-pi 2>/dev/null || true
 
 echo
 echo "=== Uninstallation Complete ==="
 echo
 echo "Config and video data preserved at:"
-echo "  /etc/pi-dashcam/config.json"
-echo "  /var/lib/pi-dashcam/videos/"
+echo "  /etc/dash-of-pi/config.json"
+echo "  /var/lib/dash-of-pi/videos/"
 echo
 echo "To remove those as well, run:"
-echo "  sudo rm -rf /etc/pi-dashcam /var/lib/pi-dashcam"
+echo "  sudo rm -rf /etc/dash-of-pi /var/lib/dash-of-pi"
 echo

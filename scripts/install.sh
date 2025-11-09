@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-echo "=== Pi DashCam Installation ==="
+echo "=== Dash of Pi Installation ==="
 echo
 
 # Check if running as root
@@ -26,70 +26,74 @@ apt-get update
 apt-get install -y \
     build-essential \
     git \
-    libcamera0 \
-    libcamera-tools \
-    libraspberrypi-bin \
-    libraspberrypi0 \
-    libraspberrypi-dev \
-    golang-1.21
+    ffmpeg \
+    wget
 
-# Add Go to PATH if not already there
-export PATH=/usr/lib/go-1.21/bin:$PATH
-
-echo "[2/7] Creating pi-dashcam user..."
-if ! id "pi-dashcam" &>/dev/null; then
-    useradd -r -s /bin/false pi-dashcam
-    echo "Created user: pi-dashcam"
+# Install Go 1.24.9 using the golang installation script (unless there's a go version 1.20+ already) 
+if ! command -v go &> /dev/null || ! go version | grep -q "go1\.[2-9][0-9]\|go[2-9]\."; then
+    echo "Installing Go 1.24.9..."
+    wget -q -O - https://raw.githubusercontent.com/canha/golang-tools-install-script/master/goinstall.sh | bash -s -- --version 1.24.9
+    export PATH=$HOME/.go/bin:$PATH
+    export GOROOT=$HOME/.go
 else
-    echo "User pi-dashcam already exists"
+    echo "Go 1.20+ already installed"
+fi
+
+# Verify Go installation
+go version
+
+echo "[2/7] Creating dash-of-pi user..."
+if ! id "dash-of-pi" &>/dev/null; then
+    useradd -r -s /bin/false dash-of-pi
+    echo "Created user: dash-of-pi"
+else
+    echo "User dash-of-pi already exists"
 fi
 
 echo "[3/7] Building application..."
 cd "$(dirname "$0")/.."
-/usr/lib/go-1.21/bin/go mod download
-/usr/lib/go-1.21/bin/go build -o pi-dashcam .
+go mod download
+go build -o dash-of-pi .
 
 echo "[4/7] Installing files..."
-mkdir -p /opt/pi-dashcam/bin
-mkdir -p /var/lib/pi-dashcam/videos
-mkdir -p /etc/pi-dashcam
+mkdir -p /var/lib/dash-of-pi/videos
+mkdir -p /etc/dash-of-pi
 
-cp pi-dashcam /opt/pi-dashcam/bin/
-chmod 755 /opt/pi-dashcam/bin/pi-dashcam
-cp scripts/pi-dashcam.service /etc/systemd/system/
+cp dash-of-pi /usr/local/bin/
+chmod 755 /usr/local/bin/dash-of-pi
+cp scripts/dash-of-pi.service /etc/systemd/system/
 
 # Set permissions
-chown -R pi-dashcam:pi-dashcam /var/lib/pi-dashcam
-chown pi-dashcam:pi-dashcam /etc/pi-dashcam
-chown pi-dashcam:pi-dashcam /opt/pi-dashcam
+chown -R dash-of-pi:dash-of-pi /var/lib/dash-of-pi
+chown dash-of-pi:dash-of-pi /etc/dash-of-pi
 
-chmod 750 /var/lib/pi-dashcam
-chmod 750 /etc/pi-dashcam
+chmod 750 /var/lib/dash-of-pi
+chmod 750 /etc/dash-of-pi
 
 echo "[5/7] Creating initial config..."
-if [ ! -f /etc/pi-dashcam/config.json ]; then
-    sudo -u pi-dashcam /opt/pi-dashcam/bin/pi-dashcam -config /etc/pi-dashcam/config.json -v &
+if [ ! -f /etc/dash-of-pi/config.json ]; then
+    sudo -u dash-of-pi /usr/local/bin/dash-of-pi -config /etc/dash-of-pi/config.json -v &
     sleep 2
-    pkill -f "pi-dashcam" || true
-    echo "Config created at /etc/pi-dashcam/config.json"
+    pkill -f "dash-of-pi" || true
+    echo "Config created at /etc/dash-of-pi/config.json"
 else
-    echo "Config already exists at /etc/pi-dashcam/config.json"
+    echo "Config already exists at /etc/dash-of-pi/config.json"
 fi
 
 echo "[6/7] Enabling systemd service..."
 systemctl daemon-reload
-systemctl enable pi-dashcam
+systemctl enable dash-of-pi
 
 echo "[7/7] Starting service..."
-systemctl start pi-dashcam
+systemctl start dash-of-pi
 
 echo
 echo "=== Installation Complete ==="
 echo
-echo "Status: $(systemctl is-active pi-dashcam)"
-echo "View logs: journalctl -u pi-dashcam -f"
-echo "Config file: /etc/pi-dashcam/config.json"
-echo "Videos directory: /var/lib/pi-dashcam/videos"
+echo "Status: $(systemctl is-active dash-of-pi)"
+echo "View logs: journalctl -u dash-of-pi -f"
+echo "Config file: /etc/dash-of-pi/config.json"
+echo "Videos directory: /var/lib/dash-of-pi/videos"
 echo
 echo "Access the dashboard at: http://$(hostname -I | awk '{print $1}'):8080"
 echo

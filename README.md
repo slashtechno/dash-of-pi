@@ -1,22 +1,23 @@
 # Dash of Pi
 
-Headless dash cam for Raspberry Pi Zero 2W. Continuous video recording with web dashboard for downloads and live streaming.
+Headless dash cam for Raspberry Pi Zero 2W (but usable on other machines). Continuous video recording with web dashboard for downloads and live streaming. Most importantly, **footage is recoverable even if power loss occurs mid-recording**.
 
 ## Quick Start
+**Pi Setup:**
+```bash
+# ssh pi@raspberrypi.local
+git clone https://github.com/slashtechno/dash-of-pi && cd dash-of-pi
+docker-compose up -d
+# Open http://raspberrypi.local:8080 and use the auth token printed in the terminal
+```
 
 **Local Testing:**
 ```bash
-go build && ./pi-dashcam -v
-# Open http://localhost:8080
+git clone https://github.com/slashtechno/dash-of-pi && cd dash-of-pi
+go run .
+# Open http://localhost:8080  and use the auth token printed in the terminal
 ```
 
-**Pi Setup (SSH):**
-```bash
-ssh pi@raspberrypi.local
-git clone <repo> && cd pi-dashcam
-docker-compose up -d
-# Open http://raspberrypi.local:8080
-```
 
 ## Features
 
@@ -95,7 +96,7 @@ Restart service to apply changes.
 **Service won't start:**
 ```bash
 # Docker
-docker compose logs pi-dashcam
+docker compose logs dash-of-pi
 
 # Systemd
 journalctl -u dash-of-pi -f
