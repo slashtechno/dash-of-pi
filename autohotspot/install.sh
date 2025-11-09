@@ -23,7 +23,10 @@ fi
 
 # --- Uninstall previous versions if they exist ---
 echo "Removing any previous AutoHotspot installation..."
-systemctl disable --now wifi_mode.service >/dev/null 2>&1 || true
+# NOTE: Do NOT stop the service here - it manages your active WiFi connection!
+# Disable the old service (it will keep running until reboot).
+# After we copy the new service file and enable it below, the new version will start on next boot.
+systemctl disable wifi_mode.service >/dev/null 2>&1 || true
 rm -f "$SERVICE_FILE_DEST"
 rm -f "$SWITCH_SCRIPT_DEST"
 rm -f "$CONFIG_DEST"
@@ -120,5 +123,16 @@ else
 fi
 
 echo "--- AutoHotspot Installation Complete ---"
+echo ""
+echo "✅ Continuous monitoring is enabled! The service will:"
+echo "   • Monitor WiFi connectivity every 30 seconds"
+echo "   • Automatically switch to hotspot if home network is lost"
+echo "   • Automatically reconnect to home network when available"
+echo ""
 echo "Please reboot the Raspberry Pi to apply all changes."
 echo "Command: sudo reboot"
+echo ""
+echo "After reboot, monitor the service with:"
+echo "   sudo tail -f /var/log/wifi_mode_switch.log"
+echo ""
+echo "For more details, see MONITORING.md"

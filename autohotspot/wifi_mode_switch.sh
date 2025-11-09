@@ -6,6 +6,13 @@ LOG_FILE="/var/log/wifi_mode_switch.log"
 HOSTAPD_CONF="/etc/hostapd/hostapd.conf"
 WPA_CONF="/etc/wpa_supplicant/wpa_supplicant-wlan0.conf"
 
+# Monitoring settings
+CHECK_INTERVAL=30  # Check connection every 30 seconds
+PING_HOST="8.8.8.8"  # Google DNS for connectivity check
+PING_TIMEOUT=5
+FAILED_CHECKS_THRESHOLD=3  # Switch to hotspot after 3 failed checks
+CURRENT_MODE=""  # Track current mode: "client" or "hotspot"
+
 # Read configuration
 if [ ! -f "$CONFIG" ]; then
   echo "$(date '+%Y-%m-%d %H:%M:%S'): ERROR: Config file $CONFIG not found" >> "$LOG_FILE"
@@ -122,14 +129,94 @@ EOF
   log_message "Hotspot mode activated"
 }
 
-# Main logic: scan for home network
+# Function to check if we have internet connectivity in client mode
+check_connectivity() {
+  # First check if we have an IP address
+  if ! ip addr show "$DEVICE" | grep -q "inet "; then
+    return 1
+  fi
+  
+  # Then check if we can ping
+  if ping -c 1 -W "$PING_TIMEOUT" "$PING_HOST" >/dev/null 2>&1; then
+    return 0
+  else
+    return 1
+  fi
+}
+
+# Function to check if home network is available
+home_network_available() {
+  iw dev "$DEVICE" scan ap-force 2>/dev/null | grep -q "SSID: $HOME_SSID"
+}
+
+# Main mode switching logic
+perform_mode_switch() {
+  log_message "Performing mode detection..."
+  
+  if home_network_available; then
+    if [ "$CURRENT_MODE" != "client" ]; then
+      switch_to_client
+      CURRENT_MODE="client"
+    fi
+  else
+    if [ "$CURRENT_MODE" != "hotspot" ]; then
+      switch_to_hotspot
+      CURRENT_MODE="hotspot"
+    fi
+  fi
+}
+
+# Monitoring loop
+monitor_connection() {
+  log_message "Starting continuous connection monitoring (checking every ${CHECK_INTERVAL}s)"
+  log_message "HOME_SSID=$HOME_SSID, HOTSPOT_SSID=$HS_SSID"
+  
+  local failed_checks=0
+  
+  # Initial mode switch
+  perform_mode_switch
+  
+  while true; do
+    sleep "$CHECK_INTERVAL"
+    
+    if [ "$CURRENT_MODE" = "client" ]; then
+      # In client mode - check connectivity
+      if check_connectivity; then
+        failed_checks=0
+        log_message "Client mode: Connection OK"
+      else
+        failed_checks=$((failed_checks + 1))
+        log_message "Client mode: Connection check failed ($failed_checks/$FAILED_CHECKS_THRESHOLD)"
+        
+        if [ $failed_checks -ge $FAILED_CHECKS_THRESHOLD ]; then
+          log_message "Client mode: Connection lost after $failed_checks failed checks"
+          # Check if home network is still visible
+          if ! home_network_available; then
+            log_message "Home network no longer visible, switching to hotspot"
+            switch_to_hotspot
+            CURRENT_MODE="hotspot"
+            failed_checks=0
+          else
+            log_message "Home network still visible, attempting to reconnect"
+            switch_to_client
+            failed_checks=0
+          fi
+        fi
+      fi
+    else
+      # In hotspot mode - periodically check if home network becomes available
+      log_message "Hotspot mode: Checking for home network"
+      if home_network_available; then
+        log_message "Home network detected, switching to client mode"
+        switch_to_client
+        CURRENT_MODE="client"
+        failed_checks=0
+      fi
+    fi
+  done
+}
+
+# Main logic - always run in monitoring mode
 log_message "Starting WiFi mode detection..."
 log_message "HOME_SSID=$HOME_SSID, HOTSPOT_SSID=$HS_SSID"
-
-if iw dev "$DEVICE" scan ap-force 2>/dev/null | grep -q "SSID: $HOME_SSID"; then
-  switch_to_client
-else
-  switch_to_hotspot
-fi
-
-log_message "WiFi mode switch complete"
+monitor_connection

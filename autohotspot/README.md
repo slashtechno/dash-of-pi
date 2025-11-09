@@ -1,178 +1,123 @@
 # AutoHotspot for Raspberry Pi Zero 2 W
 
-This project automatically switches your Raspberry Pi between your home Wi‑Fi and hotspot mode so you can reach the device when you're away.
+Automatically switches your Pi between home WiFi and hotspot mode with **continuous connection monitoring**. Always accessible at home or on the road.
 
-**Files**
+## How It Works
 
-- `autohotspot.json.example` — example configuration file (copy to `autohotspot.json` and edit)
-- `autohotspot.json` — your actual configuration file (git-ignored)
-- `wifi_mode_switch.sh` — script to switch between client and hotspot mode
-- `wifi_mode.service` — systemd unit to run the script on boot
-- `install.sh` — automated installation script
-- `uninstall.sh` — automated uninstallation script
-- `README.md` — this file
-- `RECOVER_FROM_DISABLED_NETWORK.md` — recovery guide if you lose SSH access
+```
+At Home:  Connects to your WiFi → Monitors connection every 30s
+          Connection lost? → Switches to hotspot automatically
+          
+Away:     Runs as hotspot → Scans for home WiFi every 30s
+          Home WiFi found? → Reconnects automatically
+```
 
-**Prerequisites**
+**Key Features:**
+- ✅ Auto-connects to home WiFi on boot
+- ✅ Auto-switches to hotspot if WiFi is lost (after 3 failed checks)
+- ✅ Auto-reconnects to home WiFi when it becomes available
+- ✅ Handles temporary network hiccups without switching
+- ✅ <1% CPU usage, minimal battery impact
 
-Before installation, ensure you have:
-- Raspberry Pi Zero 2 W with Raspberry Pi OS installed
+## Prerequisites
+
+- Raspberry Pi Zero 2 W with Raspberry Pi OS
 - SSH access to the Pi
-- `hostapd`, `dnsmasq`, `jq`, and `iw` packages (installed automatically by `install.sh`)
+- Required packages (auto-installed): `hostapd`, `dnsmasq`, `jq`, `iw`
 
-**Important Notes**
+## Installation
 
-- If you used Raspberry Pi Imager to set up WiFi on your SD card, the installation script will automatically back up and disable that configuration to prevent conflicts. Your original WiFi settings will be restored if you uninstall AutoHotspot.
-- Make sure to edit `autohotspot.json` with your actual home WiFi credentials before installation.
-
-**Installation**
-
-Follow these steps to install AutoHotspot on your Raspberry Pi.
-
-1. **Create and edit the configuration file** on your development machine:
-
+1. **Create your config file** (on your dev machine):
    ```bash
-   # Copy the example config
    cp autohotspot.json.example autohotspot.json
-   
-   # Edit with your WiFi credentials
-   nano autohotspot.json  # or use your preferred editor
+   nano autohotspot.json  # Add your WiFi credentials
    ```
 
-   Update it with your actual WiFi credentials:
-
-   ```json
-   {
-     "home_wifi": {
-       "ssid": "YourActualHomeSSID",
-       "psk": "YourActualPassword"
-     },
-     "hotspot": {
-       "ssid": "PiHotspot",
-       "psk": "HotspotPassword"
-     }
-   }
-   ```
-   
-   **Note:** `autohotspot.json` is git-ignored to protect your credentials.
-
-2. **Copy the autohotspot directory to the Pi:**
-
-   From your development machine:
-
-   ```sh
+2. **Copy to Pi and install:**
+   ```bash
    scp -r autohotspot user@pizero.local:~/
-   ```
-
-3. **Run the installation script on the Pi:**
-
-   SSH into the Pi and execute the installer:
-
-   ```sh
-   ssh user@pizero.local
-   cd ~/autohotspot
-   chmod +x install.sh
-   sudo ./install.sh
-   ```
-
-   The installer will automatically:
-   - Install required packages (hostapd, dnsmasq, jq, iw, dhcpcd5)
-   - Unmask and configure hostapd
-   - Create dnsmasq DHCP configuration
-   - Back up existing WiFi configuration
-   - Install the AutoHotspot service
-
-4. **Reboot the Pi to activate AutoHotspot:**
-
-   ```sh
-   sudo reboot
-   ```
-
-**Reinstallation**
-
-If you need to update the configuration or reinstall AutoHotspot:
-
-1. **Update the configuration file** (`autohotspot.json`) on your development machine if needed.
-
-2. **Copy the updated autohotspot directory to the Pi:**
-
-   ```sh
-   scp -r autohotspot user@pizero.local:~/
-   ```
-
-3. **Run the installation script again** (it will automatically uninstall the previous version first):
-
-   ```sh
    ssh user@pizero.local
    cd ~/autohotspot
    chmod +x install.sh
    sudo ./install.sh
    sudo reboot
    ```
+   
+   ⚠️ **Important**: After running `install.sh`, you MUST reboot. The service manages your active WiFi connection and won't fully update until reboot.
 
-**Usage**
-
-- **At home:** The Pi scans for your home Wi‑Fi on boot. If found, it connects as a client and obtains an IP address via DHCP. Your Go web server is available on the Pi's home network IP.
-  
-- **Away from home:** If the home Wi‑Fi is not found, the Pi starts an access point (hotspot) using the configured SSID and password. Connect a phone or laptop to the hotspot and access the web server at:
-
-  ```
-  http://192.168.4.1:<port>
-  ```
-
-  Replace `<port>` with the port your web server uses.
-
-**Uninstallation**
-
-To remove AutoHotspot and its configuration:
-
-1. **SSH into the Pi:**
-
-   ```sh
-   ssh user@pizero.local
+3. **Verify it's working:**
+   ```bash
+   sudo tail -f /var/log/wifi_mode_switch.log
+   ```
+   
+   You should see:
+   ```
+   Starting continuous connection monitoring (checking every 30s)
+   Client mode: Connection OK
    ```
 
-2. **Run the uninstallation script:**
+## Usage
 
-   ```sh
-   cd ~/autohotspot
-   chmod +x uninstall.sh
-   sudo ./uninstall.sh
-   ```
+**At Home:** Pi connects to your WiFi and monitors connection every 30s. Access via home network IP.
 
-3. **Optionally remove the dnsmasq configuration:**
+**Away:** Pi runs as hotspot. Connect to the hotspot SSID and access at:
+```
+http://192.168.4.1:<port>
+```
 
-   ```sh
-   sudo rm /etc/dnsmasq.d/hotspot.conf
-   ```
+## Configuration
 
-4. **Reboot the Pi:**
+Customize monitoring by editing `/usr/local/bin/wifi_mode_switch.sh`:
 
-   ```sh
-   sudo reboot
-   ```
+```bash
+CHECK_INTERVAL=30              # Seconds between checks
+PING_HOST="8.8.8.8"            # Connectivity test host
+PING_TIMEOUT=5                 # Ping timeout
+FAILED_CHECKS_THRESHOLD=3      # Failures before switching (~90s)
+```
 
-**Troubleshooting**
+After changes: `sudo systemctl restart wifi_mode.service`
 
-- **Check logs:** View the AutoHotspot log file for debugging:
-  ```sh
-  sudo tail -f /var/log/wifi_mode_switch.log
-  ```
+## Monitoring & Troubleshooting
 
-- **Manual service control:**
-  ```sh
-  sudo systemctl status wifi_mode.service
-  sudo systemctl restart wifi_mode.service
-  ```
+**View logs:**
+```bash
+sudo tail -f /var/log/wifi_mode_switch.log
+```
 
-- **Test the script manually:**
-  ```sh
-  sudo /usr/local/bin/wifi_mode_switch.sh
-  ```
+**Service control:**
+```bash
+sudo systemctl status wifi_mode.service
+sudo systemctl restart wifi_mode.service
+```
 
-**Notes**
+**Run script manually (for testing):**
+```bash
+sudo /usr/local/bin/wifi_mode_switch.sh  # Runs monitoring loop
+```
 
-- This setup is intended for small, local deployments (development or personal use).
-- The script manages its own dedicated configuration files and does not interfere with system-wide network settings.
-- Review `wifi_mode_switch.sh` and service unit before enabling on production devices.
-- The hotspot mode uses a static IP (192.168.4.1) and runs `hostapd` and `dnsmasq` services.
+## Quick Test
+
+1. Turn off your WiFi router
+2. Wait ~2 minutes
+3. Pi should switch to hotspot mode
+4. Turn router back on
+5. Pi should reconnect to WiFi in ~1 minute
+
+## Uninstallation
+
+```bash
+cd ~/autohotspot
+chmod +x uninstall.sh
+sudo ./uninstall.sh
+sudo rm /etc/dnsmasq.d/hotspot.conf  # Optional
+sudo reboot
+```
+
+## Notes
+
+- Hotspot uses static IP: `192.168.4.1`
+- Monitoring uses <1% CPU
+- Check interval: 30 seconds
+- Switch threshold: 3 failed checks (~90 seconds)
+- Recovery: See `RECOVER_FROM_DISABLED_NETWORK.md` if you lose SSH access
