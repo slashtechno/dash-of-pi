@@ -72,7 +72,7 @@ chmod 750 /etc/dash-of-pi
 
 echo "[5/7] Creating initial config..."
 if [ ! -f /etc/dash-of-pi/config.json ]; then
-    sudo -u dash-of-pi /usr/local/bin/dash-of-pi -config /etc/dash-of-pi/config.json -v &
+    sudo -u dash-of-pi /usr/local/bin/dash-of-pi -config /etc/dash-of-pi/config.json &
     sleep 2
     pkill -f "dash-of-pi" || true
     echo "Config created at /etc/dash-of-pi/config.json"
