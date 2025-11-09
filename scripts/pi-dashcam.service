@@ -1,0 +1,39 @@
+[Unit]
+Description=Pi DashCam - Raspberry Pi Dash Camera Service
+After=network.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+Restart=on-failure
+RestartSec=10
+StartLimitBurst=5
+
+# User and group
+User=pi-dashcam
+Group=pi-dashcam
+
+# Working directory
+WorkingDirectory=/opt/pi-dashcam
+
+# Executable
+ExecStart=/opt/pi-dashcam/bin/pi-dashcam -config /etc/pi-dashcam/config.json -v
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=pi-dashcam
+
+# Resource limits
+LimitNOFILE=65536
+LimitNPROC=512
+
+# Security
+NoNewPrivileges=true
+PrivateTmp=true
+
+# Device access for camera
+PrivateDevices=false
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,11 @@
+.git
+.gitignore
+README.md
+.env
+.env.local
+scripts/
+docker-compose.yml
+videos/
+*.log
+.vscode
+.idea
