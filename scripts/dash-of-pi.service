@@ -1,38 +1,38 @@
 [Unit]
 Description=Dash of Pi - Raspberry Pi Dash Camera Service
 After=network.target
-StartLimitIntervalSec=0
 
 [Service]
 Type=simple
+
+# Restart policy - automatically restart if the service crashes
 Restart=on-failure
 RestartSec=10
-StartLimitBurst=5
 
-# User and group
+# Run as dedicated service user (not root) for security
 User=dash-of-pi
 Group=dash-of-pi
 
-# Working directory
+# Working directory for the service
 WorkingDirectory=/var/lib/dash-of-pi
 
-# Executable
-ExecStart=/usr/local/bin/dash-of-pi -config /etc/dash-of-pi/config.json -v
+# Command to run
+ExecStart=/usr/local/bin/dash-of-pi -config /etc/dash-of-pi/config.json
 
-# Logging
+# Send logs to systemd journal (view with: journalctl -u dash-of-pi -f)
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=dash-of-pi
 
-# Resource limits
-LimitNOFILE=65536
-LimitNPROC=512
+# Resource limits (adjust if needed for Pi Zero 2W)
+LimitNOFILE=1024    # Max open files (videos, camera, HTTP connections)
+LimitNPROC=128      # Max processes/threads (reduced for Pi Zero 2W)
 
-# Security
-NoNewPrivileges=true
-PrivateTmp=true
+# Security hardening
+NoNewPrivileges=true    # Prevent privilege escalation
+PrivateTmp=true         # Isolated /tmp directory
 
-# Device access for camera
+# Allow camera access (required for /dev/video0)
 PrivateDevices=false
 
 [Install]
