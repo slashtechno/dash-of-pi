@@ -11,7 +11,6 @@ import (
 
 type Config struct {
 	Port             int    `json:"port"`
-	StreamPort       int    `json:"stream_port"`  // UDP port for live stream from FFmpeg
 	VideoDir         string `json:"video_dir"`
 	StorageCapGB     int    `json:"storage_cap_gb"`
 	AuthToken        string `json:"auth_token"`
@@ -37,7 +36,6 @@ func DefaultConfig() *Config {
 
 	return &Config{
 		Port:            DefaultPort,
-		StreamPort:      DefaultStreamPort,
 		VideoDir:        stateDir,
 		StorageCapGB:    DefaultStorageCapGB,
 		VideoBitrate:    DefaultVideoBitrate,
@@ -64,9 +62,6 @@ func LoadOrCreateConfig(configPath string) (*Config, error) {
 		}
 
 		// Set defaults for new fields if missing
-		if config.StreamPort == 0 {
-			config.StreamPort = DefaultStreamPort
-		}
 		if config.MJPEGQuality == 0 {
 			config.MJPEGQuality = DefaultMJPEGQuality
 		}

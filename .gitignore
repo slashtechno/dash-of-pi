@@ -1,3 +1,10 @@
+# Config & Data
+config.json
+.dash-of-pi/
+test*.jpg
+test*.mp4
+merged_dashcam.mp4
+
 # Binaries
 /dash-of-pi
 /pi-dashcam
@@ -32,8 +39,3 @@ vendor/
 .env
 .env.local
 
-# Config & Data
-config.json
-.dash-of-pi/
-test*.jpg
-test*.mp4

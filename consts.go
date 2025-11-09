@@ -79,7 +79,6 @@ const (
 const (
 	// Video defaults
 	DefaultPort            = 8080
-	DefaultStreamPort      = 5000
 	DefaultStorageCapGB    = 10
 	DefaultVideoBitrate    = 1024 // kbps
 	DefaultVideoFPS        = 24

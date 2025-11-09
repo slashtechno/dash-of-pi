@@ -92,6 +92,8 @@ func (c *Camera) recordAndStreamSegment(filename string) error {
 		"-c:v", "mjpeg",
 		"-q:v", fmt.Sprintf("%d", c.config.MJPEGQuality),
 		"-r", fmt.Sprintf("%d", c.config.VideoFPS),
+		"-huffman", "optimal",      // Use optimal Huffman tables (better compression, cleaner output)
+		"-force_duplicated_matrix", "1", // Ensure proper quantization matrices
 		"-t", fmt.Sprintf("%d", c.config.SegmentLengthS),
 		"-f", "mjpeg",
 		filename,

@@ -25,11 +25,11 @@ type APIServer struct {
 }
 
 type VideoInfo struct {
-	Name      string    `json:"name"`
-	Path      string    `json:"path"`
-	Size      int64     `json:"size"`
-	ModTime   time.Time `json:"mod_time"`
-	Duration  int       `json:"duration"` // seconds (approximate)
+	Name     string    `json:"name"`
+	Path     string    `json:"path"`
+	Size     int64     `json:"size"`
+	ModTime  time.Time `json:"mod_time"`
+	Duration int       `json:"duration"` // seconds (approximate)
 }
 
 type StorageStats struct {
@@ -311,14 +311,13 @@ func (s *APIServer) handleGetAuthToken(w http.ResponseWriter, r *http.Request) {
 func (s *APIServer) handleGetConfig(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"port":              s.config.Port,
-		"stream_port":       s.config.StreamPort,
-		"storage_cap_gb":    s.config.StorageCapGB,
-		"video_bitrate":     s.config.VideoBitrate,
-		"video_fps":         s.config.VideoFPS,
-		"video_width":       s.config.VideoResWidth,
-		"video_height":      s.config.VideoResHeight,
-		"segment_length_s":  s.config.SegmentLengthS,
+		"port":             s.config.Port,
+		"storage_cap_gb":   s.config.StorageCapGB,
+		"video_bitrate":    s.config.VideoBitrate,
+		"video_fps":        s.config.VideoFPS,
+		"video_width":      s.config.VideoResWidth,
+		"video_height":     s.config.VideoResHeight,
+		"segment_length_s": s.config.SegmentLengthS,
 	})
 }
 
@@ -449,10 +448,10 @@ func (s *APIServer) handleStreamMJPEG(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				return
 			}
-			
+
 			flusher.Flush()
 			frameCount++
-			
+
 			if frameCount%StreamLogInterval == 0 {
 				s.logger.Debugf("MJPEG stream: sent %d frames", frameCount)
 			}
@@ -578,30 +577,30 @@ func (s *APIServer) handleGenerateVideo(w http.ResponseWriter, r *http.Request) 
 	var tempFiles []string
 	for i, srcPath := range mjpegFiles {
 		tempPath := filepath.Join(tempDir, fmt.Sprintf("segment_%03d.mjpeg", i))
-		
+
 		src, err := os.Open(srcPath)
 		if err != nil {
 			// File may have been deleted by storage cleanup - continue with remaining files
 			s.logger.Printf("Warning: Could not open %s: %v", filepath.Base(srcPath), err)
 			continue
 		}
-		
+
 		dst, err := os.Create(tempPath)
 		if err != nil {
 			src.Close()
 			http.Error(w, "Failed to create temp file", http.StatusInternalServerError)
 			return
 		}
-		
+
 		_, copyErr := io.Copy(dst, src)
 		src.Close()
 		dst.Close()
-		
+
 		if copyErr != nil {
 			http.Error(w, "Failed to copy file", http.StatusInternalServerError)
 			return
 		}
-		
+
 		tempFiles = append(tempFiles, tempPath)
 	}
 
@@ -626,14 +625,16 @@ func (s *APIServer) handleGenerateVideo(w http.ResponseWriter, r *http.Request) 
 
 	// Generate MP4 using ffmpeg concat with MPEG-4 encoding at native quality/FPS
 	outputFile := filepath.Join(tempDir, "output.mp4")
-	
-	s.logger.Printf("Generating video from %d MJPEG segments at %dx%d@%dfps", 
+
+	s.logger.Printf("Generating video from %d MJPEG segments at %dx%d@%dfps",
 		len(tempFiles), s.config.VideoResWidth, s.config.VideoResHeight, s.config.VideoFPS)
-	
+
 	cmd := exec.Command(
 		"ffmpeg",
 		"-y",
-		"-loglevel", "warning",
+		"-loglevel", "error", // Only show actual errors, not format warnings
+		"-fflags", "+discardcorrupt", // Discard corrupted frames instead of warning
+		"-err_detect", "ignore_err", // Ignore minor MJPEG format errors
 		"-f", "concat",
 		"-safe", "0",
 		"-i", concatFile,
@@ -652,7 +653,7 @@ func (s *APIServer) handleGenerateVideo(w http.ResponseWriter, r *http.Request) 
 	cmd.Stderr = &stderrBuf
 
 	s.logger.Printf("Starting FFmpeg encoding of %d segments...", len(tempFiles))
-	
+
 	// Start FFmpeg
 	if err := cmd.Start(); err != nil {
 		http.Error(w, fmt.Sprintf("Failed to start encoding: %v", err), http.StatusInternalServerError)
@@ -668,7 +669,7 @@ func (s *APIServer) handleGenerateVideo(w http.ResponseWriter, r *http.Request) 
 	// Log progress while encoding
 	progressTicker := time.NewTicker(5 * time.Second)
 	defer progressTicker.Stop()
-	
+
 	lastSize := int64(0)
 	for {
 		select {
@@ -700,14 +701,14 @@ encodingDone:
 		http.Error(w, "Generated video file not found", http.StatusInternalServerError)
 		return
 	}
-	
+
 	if info.Size() == 0 {
 		s.logger.Printf("Output file is empty")
 		http.Error(w, "Generated video file is empty", http.StatusInternalServerError)
 		return
 	}
 
-	s.logger.Printf("Generated video: %.2f MB at %dx%d@%dfps", 
+	s.logger.Printf("Generated video: %.2f MB at %dx%d@%dfps",
 		float64(info.Size())/BytesPerMB,
 		s.config.VideoResWidth, s.config.VideoResHeight, s.config.VideoFPS)
 
@@ -732,7 +733,7 @@ encodingDone:
 		s.logger.Printf("Error streaming video: %v (wrote %d bytes)", err, written)
 		return
 	}
-	
+
 	s.logger.Printf("Successfully streamed %d bytes to client", written)
 }
 

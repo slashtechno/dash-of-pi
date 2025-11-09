@@ -48,12 +48,15 @@ echo ""
 
 # Use MPEG-4 encoding with high quality (same as server export)
 # Matches server.go MP4 generation exactly
+# -fflags +discardcorrupt = discard corrupted frames instead of warning
 # -q:v 2 = quality 2 (lower=better, range 1-31)
 # -r 30 = force 30 fps output
 # -fps_mode cfr = constant framerate
-# -loglevel warning = show progress and actual warnings (PTS/DTS drops are expected)
+# -loglevel error = only show actual errors, not format warnings
 ffmpeg -y \
-    -loglevel warning \
+    -loglevel error \
+    -fflags +discardcorrupt \
+    -err_detect ignore_err \
     -f concat \
     -safe 0 \
     -i "$CONCAT_FILE" \
@@ -62,6 +65,7 @@ ffmpeg -y \
     -r 30 \
     -fps_mode cfr \
     -movflags +faststart \
+    -stats \
     -f mp4 \
     "$OUTPUT_FILE"
 
