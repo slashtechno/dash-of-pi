@@ -5,8 +5,12 @@ test*.jpg
 test*.mp4
 merged_dashcam.mp4
 
+# Exports (temporary storage for generated videos)
+.export/
+.temp_export_*/
+
 # Binaries
-/dash-of-pi
+dash-of-pi
 *.exe
 *.exe~
 *.dll

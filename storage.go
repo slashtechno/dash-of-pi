@@ -13,6 +13,8 @@ type StorageManager struct {
 	storageCapGB int
 	ticker       *time.Ticker
 	done         chan struct{}
+	lastUsed     int64 // Cache last calculated storage usage
+	lastChecked  time.Time
 }
 
 func NewStorageManager(videoDir string, storageCapGB int) (*StorageManager, error) {
@@ -61,6 +63,7 @@ func (sm *StorageManager) enforceStorageCap() error {
 	}
 
 	var files []fileInfo
+	var totalSize int64
 
 	for _, entry := range entries {
 		if entry.IsDir() {
@@ -75,18 +78,18 @@ func (sm *StorageManager) enforceStorageCap() error {
 			continue
 		}
 
+		fileSize := info.Size()
 		files = append(files, fileInfo{
 			path:    filepath.Join(sm.videoDir, entry.Name()),
 			modTime: info.ModTime(),
-			size:    info.Size(),
+			size:    fileSize,
 		})
+		totalSize += fileSize
 	}
 
-	// Calculate total size
-	var totalSize int64
-	for _, f := range files {
-		totalSize += f.size
-	}
+	// Update cached usage
+	sm.lastUsed = totalSize
+	sm.lastChecked = time.Now()
 
 	capBytes := int64(sm.storageCapGB) * BytesPerGB
 
@@ -104,6 +107,7 @@ func (sm *StorageManager) enforceStorageCap() error {
 
 			if err := os.Remove(f.path); err == nil {
 				totalSize -= f.size
+				sm.lastUsed = totalSize // Update cache after deletion
 				fmt.Printf("Deleted old video: %s\n", filepath.Base(f.path))
 			}
 		}
@@ -113,12 +117,21 @@ func (sm *StorageManager) enforceStorageCap() error {
 }
 
 func (sm *StorageManager) GetStorageStats() (used int64, cap int64, err error) {
+	// Use cached value if recent (within 5 seconds)
+	if time.Since(sm.lastChecked) < 5*time.Second && sm.lastUsed > 0 {
+		cap = int64(sm.storageCapGB) * BytesPerGB
+		return sm.lastUsed, cap, nil
+	}
+
+	// Otherwise, recalculate
 	entries, err := os.ReadDir(sm.videoDir)
 	if err != nil {
 		return 0, 0, err
 	}
 
+	used = 0
 	for _, entry := range entries {
+		// Skip directories (including .export and .temp_export_*)
 		if entry.IsDir() {
 			continue
 		}
@@ -132,6 +145,10 @@ func (sm *StorageManager) GetStorageStats() (used int64, cap int64, err error) {
 		}
 		used += info.Size()
 	}
+
+	// Update cache
+	sm.lastUsed = used
+	sm.lastChecked = time.Now()
 
 	cap = int64(sm.storageCapGB) * BytesPerGB
 	return used, cap, nil

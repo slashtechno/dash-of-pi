@@ -23,8 +23,10 @@ go run .
 
 - Records continuous video in segments with rolling storage
 - Web dashboard for live streaming and downloading videos
+- On-demand video export with persistent storage (max 1 export kept)
 - Authentication
 - Docker and Systemd options
+- All times in UTC (noted in footer)
 
 ## Recording Format & On-Demand Conversion
 
@@ -36,10 +38,13 @@ go run .
 - Use the dashboard "Generate Video" section to create downloadable MP4 files on-demand
 - Select either "Lifetime" (all footage) or custom date range
 - MP4 files are re-encoded using MPEG-4 codec at high quality (q=2)
-- Generated MP4 files are streamed directly to the user and not stored on disk
+- Generated exports are saved to disk (max 1 export stored at a time)
+- Previous export is automatically replaced when generating a new one
+- Export can be downloaded multiple times or deleted manually
 
 **Storage Accounting:**
 - Only MJPEG files count toward the storage cap
+- Exports stored in `.export` directory don't count toward storage cap
 - When the cap is exceeded, oldest MJPEG files are deleted automatically
 
 ## API Endpoints
@@ -88,8 +93,11 @@ Restart service to apply changes.
 
 - **Generate Video Section:**
   - **Lifetime:** Creates MP4 from all stored MJPEG files
-  - **Custom Date Range:** Creates MP4 from MJPEG files within specified dates
-  - MP4 file is re-encoded during generation and streamed directly (not stored)
+  - **Custom Date Range:** Creates MP4 from MJPEG files within specified dates (input times are in UTC)
+  - MP4 file is re-encoded during generation and saved for download
+  - Only one export is kept at a time (replaces previous export)
+  - Export can be downloaded multiple times until deleted or replaced
+  - All times displayed in UTC (noted in footer)
 
 ## Troubleshooting
 

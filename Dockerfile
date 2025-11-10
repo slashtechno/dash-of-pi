@@ -28,6 +28,9 @@ WORKDIR /app
 # Copy binary from builder
 COPY --from=builder /app/dash-of-pi .
 
+# Copy web assets
+COPY web/ ./web/
+
 # Create directories and expose port
 RUN mkdir -p /var/lib/dash-of-pi/videos /etc/dash-of-pi
 
