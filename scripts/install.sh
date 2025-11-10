@@ -21,7 +21,7 @@ if ! grep -q "Pi Zero 2" /proc/device-tree/model 2>/dev/null; then
     fi
 fi
 
-echo "[1/7] Installing dependencies..."
+echo "[1/8] Installing dependencies..."
 apt-get update
 apt-get install -y \
     build-essential \
@@ -76,7 +76,7 @@ fi
 # Verify Go installation
 go version
 
-echo "[2/7] Creating dash-of-pi user..."
+echo "[2/8] Creating dash-of-pi user..."
 if ! id "dash-of-pi" &>/dev/null; then
     useradd -r -s /bin/false dash-of-pi
     echo "Created user: dash-of-pi"
@@ -92,12 +92,18 @@ else
     echo "dash-of-pi already in video group"
 fi
 
-echo "[3/7] Building application..."
+echo "[3/8] Building application..."
 cd "$(dirname "$0")/.."
 go mod download
 go build -o dash-of-pi .
 
-echo "[4/7] Installing files..."
+echo "[4/8] Stopping existing service (if running)..."
+if systemctl is-active --quiet dash-of-pi; then
+    systemctl stop dash-of-pi
+    echo "Stopped running service"
+fi
+
+echo "[5/8] Installing files..."
 mkdir -p /var/lib/dash-of-pi/videos
 mkdir -p /etc/dash-of-pi
 mkdir -p /var/lib/dash-of-pi/web
@@ -116,7 +122,7 @@ chown dash-of-pi:dash-of-pi /etc/dash-of-pi
 chmod 750 /var/lib/dash-of-pi
 chmod 750 /etc/dash-of-pi
 
-echo "[5/7] Creating initial config..."
+echo "[6/8] Creating initial config..."
 if [ ! -f /etc/dash-of-pi/config.json ]; then
     # Run as dash-of-pi user with explicit video directory in working directory
     cd /var/lib/dash-of-pi
@@ -137,11 +143,11 @@ else
     echo "Config already exists at /etc/dash-of-pi/config.json"
 fi
 
-echo "[6/7] Enabling systemd service..."
+echo "[7/8] Enabling systemd service..."
 systemctl daemon-reload
 systemctl enable dash-of-pi
 
-echo "[7/7] Starting service..."
+echo "[8/8] Starting service..."
 systemctl start dash-of-pi
 
 echo
