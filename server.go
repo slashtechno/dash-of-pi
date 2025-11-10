@@ -28,11 +28,16 @@ type APIServer struct {
 }
 
 type ExportInfo struct {
-	Filename  string    `json:"filename"`
-	StartTime time.Time `json:"start_time"`
-	EndTime   time.Time `json:"end_time"`
-	Size      int64     `json:"size"`
-	Available bool      `json:"available"`
+	Filename       string    `json:"filename"`
+	StartTime      time.Time `json:"start_time"`
+	EndTime        time.Time `json:"end_time"`
+	Size           int64     `json:"size"`
+	Available      bool      `json:"available"`
+	InProgress     bool      `json:"in_progress"`
+	Progress       string    `json:"progress"`        // Human-readable progress message
+	CurrentSizeMB  float64   `json:"current_size_mb"` // Current size during encoding
+	TotalSegments  int       `json:"total_segments"`  // Total number of segments to process
+	ProcessedFiles int       `json:"processed_files"` // Number of files copied so far
 }
 
 type VideoInfo struct {
@@ -87,15 +92,30 @@ func (s *APIServer) checkExistingExport() {
 		if infoData, err := os.ReadFile(infoPath); err == nil {
 			var exportInfo ExportInfo
 			if err := json.Unmarshal(infoData, &exportInfo); err == nil {
-				exportInfo.Size = info.Size()
-				exportInfo.Available = true
-				s.exportMutex.Lock()
-				s.exportInfo = &exportInfo
-				s.exportMutex.Unlock()
-				s.logger.Printf("Found existing export: %.2f MB from %s to %s",
-					float64(info.Size())/BytesPerMB,
-					exportInfo.StartTime.Format(time.RFC3339),
-					exportInfo.EndTime.Format(time.RFC3339))
+				// Only mark as available if it was completed (not in progress)
+				if !exportInfo.InProgress {
+					exportInfo.Size = info.Size()
+					exportInfo.Available = true
+					s.exportMutex.Lock()
+					s.exportInfo = &exportInfo
+					s.exportMutex.Unlock()
+					s.logger.Printf("Found existing export: %.2f MB from %s to %s",
+						float64(info.Size())/BytesPerMB,
+						exportInfo.StartTime.Format(time.RFC3339),
+						exportInfo.EndTime.Format(time.RFC3339))
+				} else {
+					// Export was interrupted, clean it up
+					s.logger.Printf("Found interrupted export, cleaning up...")
+					os.Remove(exportPath)
+					os.Remove(infoPath)
+					s.exportMutex.Lock()
+					s.exportInfo = &ExportInfo{
+						Available:  false,
+						InProgress: false,
+						Progress:   "Previous export was interrupted",
+					}
+					s.exportMutex.Unlock()
+				}
 			}
 		}
 	}
@@ -569,6 +589,36 @@ func (s *APIServer) handleGenerateExport(w http.ResponseWriter, r *http.Request)
 func (s *APIServer) generateExportAsync(startTime, endTime time.Time) {
 	s.logger.Printf("Starting async export generation from %s to %s", startTime.Format(time.RFC3339), endTime.Format(time.RFC3339))
 
+	// Set initial progress state
+	s.exportMutex.Lock()
+	s.exportInfo = &ExportInfo{
+		Available:  false,
+		InProgress: true,
+		Progress:   "Scanning for video files...",
+		StartTime:  startTime,
+		EndTime:    endTime,
+	}
+	s.exportMutex.Unlock()
+
+	// Ensure we clean up on panic or unexpected exit
+	defer func() {
+		if r := recover(); r != nil {
+			s.logger.Printf("Export generation panicked: %v", r)
+			s.exportMutex.Lock()
+			s.exportInfo = &ExportInfo{
+				Available:  false,
+				InProgress: false,
+				Progress:   "Error: Export generation failed unexpectedly",
+			}
+			s.exportMutex.Unlock()
+			// Clean up any partial export
+			exportPath := filepath.Join(s.config.VideoDir, ".export", "current_export.mp4")
+			infoPath := filepath.Join(s.config.VideoDir, ".export", "export_info.json")
+			os.Remove(exportPath)
+			os.Remove(infoPath)
+		}
+	}()
+
 	// Get all MJPEG files in date range
 	entries, err := os.ReadDir(s.config.VideoDir)
 	if err != nil {
@@ -599,8 +649,21 @@ func (s *APIServer) generateExportAsync(startTime, endTime time.Time) {
 
 	if len(mjpegFiles) == 0 {
 		s.logger.Printf("No videos found in the specified date range")
+		s.exportMutex.Lock()
+		s.exportInfo = &ExportInfo{
+			Available:  false,
+			InProgress: false,
+			Progress:   "No videos found in the specified date range",
+		}
+		s.exportMutex.Unlock()
 		return
 	}
+
+	// Update progress with total segments found
+	s.exportMutex.Lock()
+	s.exportInfo.Progress = fmt.Sprintf("Found %d video segments, preparing to copy...", len(mjpegFiles))
+	s.exportInfo.TotalSegments = len(mjpegFiles)
+	s.exportMutex.Unlock()
 
 	// Sort by modification time
 	sort.Slice(mjpegFiles, func(i, j int) bool {
@@ -613,6 +676,13 @@ func (s *APIServer) generateExportAsync(startTime, endTime time.Time) {
 	tempDir := filepath.Join(s.config.VideoDir, fmt.Sprintf(".temp_export_%d", time.Now().Unix()))
 	if err := os.MkdirAll(tempDir, 0755); err != nil {
 		s.logger.Printf("Failed to create temp directory: %v", err)
+		s.exportMutex.Lock()
+		s.exportInfo = &ExportInfo{
+			Available:  false,
+			InProgress: false,
+			Progress:   "Error: Failed to create temporary directory",
+		}
+		s.exportMutex.Unlock()
 		return
 	}
 	defer os.RemoveAll(tempDir)
@@ -621,6 +691,13 @@ func (s *APIServer) generateExportAsync(startTime, endTime time.Time) {
 	s.logger.Printf("Copying %d MJPEG files to temporary directory...", len(mjpegFiles))
 	var tempFiles []string
 	for i, srcPath := range mjpegFiles {
+		// Update progress every 10 files
+		if i%10 == 0 {
+			s.exportMutex.Lock()
+			s.exportInfo.Progress = fmt.Sprintf("Copying files... %d/%d", i, len(mjpegFiles))
+			s.exportInfo.ProcessedFiles = i
+			s.exportMutex.Unlock()
+		}
 		tempPath := filepath.Join(tempDir, fmt.Sprintf("segment_%03d.mjpeg", i))
 
 		src, err := os.Open(srcPath)
@@ -650,10 +727,21 @@ func (s *APIServer) generateExportAsync(startTime, endTime time.Time) {
 
 	if len(tempFiles) == 0 {
 		s.logger.Printf("No videos could be copied (may have been deleted)")
+		s.exportMutex.Lock()
+		s.exportInfo = &ExportInfo{
+			Available:  false,
+			InProgress: false,
+			Progress:   "Error: No videos could be copied (files may have been deleted)",
+		}
+		s.exportMutex.Unlock()
 		return
 	}
 
 	s.logger.Printf("Successfully copied %d/%d files", len(tempFiles), len(mjpegFiles))
+	s.exportMutex.Lock()
+	s.exportInfo.Progress = fmt.Sprintf("Copied %d files, preparing to encode...", len(tempFiles))
+	s.exportInfo.ProcessedFiles = len(tempFiles)
+	s.exportMutex.Unlock()
 
 	// Create concat file
 	concatFile := filepath.Join(tempDir, "concat_list.txt")
@@ -677,12 +765,18 @@ func (s *APIServer) generateExportAsync(startTime, endTime time.Time) {
 	// Delete old export if exists
 	oldExportPath := filepath.Join(exportDir, "current_export.mp4")
 	os.Remove(oldExportPath)
+	os.Remove(filepath.Join(exportDir, "export_info.json"))
+	s.logger.Printf("Removed old export if it existed")
 
 	// Generate MP4
 	outputFile := filepath.Join(exportDir, "current_export.mp4")
 
 	s.logger.Printf("Generating video from %d MJPEG segments at %dx%d@%dfps",
 		len(tempFiles), s.config.VideoResWidth, s.config.VideoResHeight, s.config.VideoFPS)
+
+	s.exportMutex.Lock()
+	s.exportInfo.Progress = "Encoding video with FFmpeg..."
+	s.exportMutex.Unlock()
 
 	cmd := exec.Command(
 		"ffmpeg",
@@ -709,6 +803,13 @@ func (s *APIServer) generateExportAsync(startTime, endTime time.Time) {
 
 	if err := cmd.Start(); err != nil {
 		s.logger.Printf("Failed to start encoding: %v", err)
+		s.exportMutex.Lock()
+		s.exportInfo = &ExportInfo{
+			Available:  false,
+			InProgress: false,
+			Progress:   "Error: Failed to start FFmpeg encoding",
+		}
+		s.exportMutex.Unlock()
 		return
 	}
 
@@ -727,6 +828,13 @@ func (s *APIServer) generateExportAsync(startTime, endTime time.Time) {
 		case err := <-done:
 			if err != nil {
 				s.logger.Printf("FFmpeg error: %s", stderrBuf.String())
+				s.exportMutex.Lock()
+				s.exportInfo = &ExportInfo{
+					Available:  false,
+					InProgress: false,
+					Progress:   "Error: FFmpeg encoding failed",
+				}
+				s.exportMutex.Unlock()
 				return
 			}
 			s.logger.Printf("FFmpeg encoding complete!")
@@ -737,6 +845,12 @@ func (s *APIServer) generateExportAsync(startTime, endTime time.Time) {
 				speedMBps := float64(info.Size()-lastSize) / BytesPerMB / 5.0
 				s.logger.Printf("Encoding progress: %.1f MB (%.1f MB/s)", sizeMB, speedMBps)
 				lastSize = info.Size()
+				
+				// Update progress for frontend
+				s.exportMutex.Lock()
+				s.exportInfo.Progress = fmt.Sprintf("Encoding... %.1f MB (%.1f MB/s)", sizeMB, speedMBps)
+				s.exportInfo.CurrentSizeMB = sizeMB
+				s.exportMutex.Unlock()
 			}
 		}
 	}
@@ -746,11 +860,25 @@ encodingDone:
 	info, err := os.Stat(outputFile)
 	if err != nil {
 		s.logger.Printf("Output file not found: %v", err)
+		s.exportMutex.Lock()
+		s.exportInfo = &ExportInfo{
+			Available:  false,
+			InProgress: false,
+			Progress:   "Error: Output file not found",
+		}
+		s.exportMutex.Unlock()
 		return
 	}
 
 	if info.Size() == 0 {
 		s.logger.Printf("Output file is empty")
+		s.exportMutex.Lock()
+		s.exportInfo = &ExportInfo{
+			Available:  false,
+			InProgress: false,
+			Progress:   "Error: Output file is empty",
+		}
+		s.exportMutex.Unlock()
 		return
 	}
 
@@ -760,11 +888,14 @@ encodingDone:
 
 	// Save export info
 	exportInfo := ExportInfo{
-		Filename:  "current_export.mp4",
-		StartTime: startTime,
-		EndTime:   endTime,
-		Size:      info.Size(),
-		Available: true,
+		Filename:      "current_export.mp4",
+		StartTime:     startTime,
+		EndTime:       endTime,
+		Size:          info.Size(),
+		Available:     true,
+		InProgress:    false,
+		Progress:      "Complete",
+		CurrentSizeMB: float64(info.Size()) / BytesPerMB,
 	}
 
 	infoPath := filepath.Join(exportDir, "export_info.json")

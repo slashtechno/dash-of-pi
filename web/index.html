@@ -68,12 +68,20 @@
 				<button id="generateCustomBtn" onclick="generateVideo('custom')" style="width: 100%;">Generate Video</button>
 			</div>
 
+			<!-- Export progress section -->
+			<div id="exportProgressSection" style="display: none; margin-top: 20px; padding: 15px; background: #1a3a52; border: 1px solid #3b82f6; border-radius: 6px;">
+				<div style="font-weight: 600; margin-bottom: 8px;">⏳ Generating Export...</div>
+				<div id="exportProgressText" style="font-size: 14px; color: #a0a0a0; margin-bottom: 10px;"></div>
+				<div style="font-size: 12px; color: #888;">This may take several minutes. Check server logs for detailed progress.</div>
+			</div>
+
 			<!-- Export availability section -->
 			<div id="exportSection" style="display: none; margin-top: 20px; padding: 15px; background: #1a4d2e; border: 1px solid #4ade80; border-radius: 6px;">
 				<div style="display: flex; justify-content: space-between; align-items: start;">
 					<div>
-						<div style="font-weight: 600; margin-bottom: 5px;">📹 Export Available</div>
+						<div style="font-weight: 600; margin-bottom: 5px;">✅ Export Ready</div>
 						<div id="exportInfo" style="font-size: 14px; color: #a0a0a0; margin-bottom: 10px;"></div>
+						<div style="font-size: 12px; color: #888; margin-top: 5px;">⚠️ Note: Starting a new export will delete this one</div>
 					</div>
 					<button onclick="deleteExport()" style="background: #dc2626; padding: 6px 12px; font-size: 14px;">🗑️ Delete</button>
 				</div>

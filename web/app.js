@@ -50,7 +50,8 @@ function authenticate() {
 			loadStream();
 			checkExportStatus();
 			setInterval(loadStatus, 5000);
-			setInterval(checkExportStatus, 10000); // Check for exports every 10 seconds
+			// Check export status more frequently (every 3 seconds to catch progress updates)
+			setInterval(checkExportStatus, 3000);
 		} else {
 			document.getElementById('authError').textContent = 'Invalid token';
 			document.getElementById('authError').style.display = 'block';
@@ -155,9 +156,27 @@ async function checkExportStatus() {
 		if (response.ok) {
 			const data = await response.json();
 			const exportSection = document.getElementById('exportSection');
+			const progressSection = document.getElementById('exportProgressSection');
 			
-			if (data.available) {
+			if (data.in_progress) {
+				// Show progress, hide completed export
+				progressSection.style.display = 'block';
+				exportSection.style.display = 'none';
+				
+				let progressText = data.progress || 'Processing...';
+				
+				// Add file count if available (during copying phase)
+				if (data.processed_files > 0 && data.total_segments > 0 && data.current_size_mb === 0) {
+					progressText += ` (${data.processed_files}/${data.total_segments} files)`;
+				}
+				// During encoding, the progress message already includes size info, so don't duplicate
+				
+				document.getElementById('exportProgressText').textContent = progressText;
+			} else if (data.available) {
+				// Hide progress, show completed export
+				progressSection.style.display = 'none';
 				exportSection.style.display = 'block';
+				
 				const startDate = new Date(data.start_time).toLocaleString('en-US', { 
 					timeZone: 'UTC', 
 					dateStyle: 'short',
@@ -174,6 +193,8 @@ async function checkExportStatus() {
 				document.getElementById('exportInfo').textContent = 
 					`${startDate} to ${endDate} • ${size} MB`;
 			} else {
+				// Hide both sections
+				progressSection.style.display = 'none';
 				exportSection.style.display = 'none';
 			}
 		}
@@ -223,9 +244,9 @@ async function generateVideo(type) {
 		);
 		
 		if (response.ok) {
-			showError('🎬 Video generation started! This may take several minutes. The export will appear above when ready. Check server logs for progress.');
-			// Start checking for export immediately
-			setTimeout(checkExportStatus, 2000);
+			showError('🎬 Video generation started! Progress will appear below.');
+			// Start checking for export immediately and more frequently
+			setTimeout(checkExportStatus, 1000);
 		} else {
 			const error = await response.text();
 			showError('Failed to generate video: ' + error);
@@ -360,5 +381,6 @@ if (!authToken) {
 	loadStream();
 	checkExportStatus();
 	setInterval(loadStatus, 5000);
-	setInterval(checkExportStatus, 10000);
+	// Check export status more frequently (every 3 seconds to catch progress updates)
+	setInterval(checkExportStatus, 3000);
 }
