@@ -50,7 +50,7 @@ go run .
 ## API Endpoints
 
 All endpoints except `/health` require `Authorization: Bearer <token>` header.
-
+<!-- TODO: outdated -->
 ```bash
 GET /health              # No auth required
 GET /api/status          # System status
