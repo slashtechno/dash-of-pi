@@ -24,9 +24,11 @@ StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=dash-of-pi
 
-# Resource limits (adjust if needed for Pi Zero 2W)
+# Resource limits for Pi Zero 2W (512MB RAM)
 LimitNOFILE=1024    # Max open files (videos, camera, HTTP connections)
-LimitNPROC=128      # Max processes/threads (reduced for Pi Zero 2W)
+LimitNPROC=128      # Max processes/threads
+MemoryMax=200M      # Prevent OOM - limit to 200MB max (leaves room for system)
+MemoryHigh=150M     # Start throttling at 150MB
 
 # Security hardening
 NoNewPrivileges=true    # Prevent privilege escalation

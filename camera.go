@@ -81,23 +81,47 @@ func (c *Camera) recordAndStreamSegment(filename string) error {
 	// Get camera input based on OS
 	inputFormat, inputDevice := c.getCameraInput()
 
-	recordCmd := exec.Command(
-		"ffmpeg",
+	// Build FFmpeg command with memory-efficient settings for Pi Zero 2W
+	args := []string{
 		"-y",
 		"-loglevel", "warning",
 		"-f", inputFormat,
+	}
+
+	// For v4l2 (Linux), request specific input format to reduce memory usage
+	if inputFormat == "video4linux2" || inputFormat == "v4l2" {
+		// Request MJPEG from camera if possible (reduces CPU/memory load)
+		args = append(args,
+			"-input_format", "mjpeg",
+			"-video_size", fmt.Sprintf("%dx%d", c.config.VideoResWidth, c.config.VideoResHeight),
+		)
+	}
+
+	args = append(args,
 		"-framerate", fmt.Sprintf("%d", c.config.VideoFPS),
+		// Memory-efficient buffer settings for Pi Zero 2W (512MB RAM)
+		"-rtbufsize", "5M",      // Reduce real-time buffer size (default can be 3GB!)
+		"-thread_queue_size", "16", // Reduce thread queue (default 8, but keep minimal)
 		"-i", inputDevice,
-		"-vf", fmt.Sprintf("scale=%d:%d", c.config.VideoResWidth, c.config.VideoResHeight),
+	)
+
+	// Only scale if camera doesn't support native resolution
+	if inputFormat != "video4linux2" && inputFormat != "v4l2" {
+		args = append(args, "-vf", fmt.Sprintf("scale=%d:%d", c.config.VideoResWidth, c.config.VideoResHeight))
+	}
+
+	args = append(args,
 		"-c:v", "mjpeg",
 		"-q:v", fmt.Sprintf("%d", c.config.MJPEGQuality),
 		"-r", fmt.Sprintf("%d", c.config.VideoFPS),
-		"-huffman", "optimal",      // Use optimal Huffman tables (better compression, cleaner output)
+		"-huffman", "optimal",           // Use optimal Huffman tables (better compression)
 		"-force_duplicated_matrix", "1", // Ensure proper quantization matrices
 		"-t", fmt.Sprintf("%d", c.config.SegmentLengthS),
 		"-f", "mjpeg",
 		filename,
 	)
+
+	recordCmd := exec.Command("ffmpeg", args...)
 
 	stderr, err := recordCmd.StderrPipe()
 	if err != nil {

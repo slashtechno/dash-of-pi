@@ -84,6 +84,14 @@ else
     echo "User dash-of-pi already exists"
 fi
 
+# Add dash-of-pi user to video group for camera access
+if ! groups dash-of-pi | grep -q '\bvideo\b'; then
+    usermod -a -G video dash-of-pi
+    echo "Added dash-of-pi to video group for camera access"
+else
+    echo "dash-of-pi already in video group"
+fi
+
 echo "[3/7] Building application..."
 cd "$(dirname "$0")/.."
 go mod download
