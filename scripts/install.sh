@@ -100,10 +100,14 @@ go build -o dash-of-pi .
 echo "[4/7] Installing files..."
 mkdir -p /var/lib/dash-of-pi/videos
 mkdir -p /etc/dash-of-pi
+mkdir -p /var/lib/dash-of-pi/web
 
 cp dash-of-pi /usr/local/bin/
 chmod 755 /usr/local/bin/dash-of-pi
 cp scripts/dash-of-pi.service /etc/systemd/system/
+
+# Copy web directory to working directory
+cp -r web/* /var/lib/dash-of-pi/web/
 
 # Set permissions
 chown -R dash-of-pi:dash-of-pi /var/lib/dash-of-pi

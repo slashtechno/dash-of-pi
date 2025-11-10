@@ -111,10 +111,20 @@ func (s *APIServer) Start() error {
 	mux.HandleFunc("/", s.handleUI)
 	
 	// Serve static files from web directory
-	webDir := "./web"
-	if _, err := os.Stat(webDir); err == nil {
-		fs := http.FileServer(http.Dir(webDir))
-		mux.Handle("/web/", http.StripPrefix("/web/", fs))
+	// Check multiple locations for the web directory
+	possibleWebDirs := []string{
+		"./web",                                       // Relative to working directory
+		"/var/lib/dash-of-pi/web",                    // Systemd service location
+		filepath.Join(filepath.Dir(os.Args[0]), "../web"), // Relative to binary
+	}
+	
+	for _, webDir := range possibleWebDirs {
+		if _, err := os.Stat(webDir); err == nil {
+			fs := http.FileServer(http.Dir(webDir))
+			mux.Handle("/web/", http.StripPrefix("/web/", fs))
+			s.logger.Printf("Serving static files from: %s", webDir)
+			break
+		}
 	}
 
 	// API endpoints (with auth)
@@ -174,12 +184,20 @@ func (s *APIServer) handleUI(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Try to serve from web directory first
-	indexPath := "./web/index.html"
-	if data, err := os.ReadFile(indexPath); err == nil {
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.WriteHeader(http.StatusOK)
-		w.Write(data)
-		return
+	// Check multiple locations for the web directory
+	possiblePaths := []string{
+		"./web/index.html",                            // Relative to working directory
+		"/var/lib/dash-of-pi/web/index.html",         // Systemd service location
+		filepath.Join(filepath.Dir(os.Args[0]), "../web/index.html"), // Relative to binary
+	}
+	
+	for _, indexPath := range possiblePaths {
+		if data, err := os.ReadFile(indexPath); err == nil {
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			w.WriteHeader(http.StatusOK)
+			w.Write(data)
+			return
+		}
 	}
 
 	// Fallback to a simple error if web directory doesn't exist
