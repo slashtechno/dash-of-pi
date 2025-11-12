@@ -23,7 +23,8 @@ go run .
 
 - Records continuous video in segments with rolling storage
 - Web dashboard for live streaming and downloading videos
-- On-demand video export with persistent storage (max 1 export kept)
+- Timestamps embedded on video (optional)
+- On-demand video export with persistent storage
 - Authentication
 - Docker and Systemd options
 - All times in UTC (noted in footer)
@@ -74,7 +75,8 @@ Config stored at `~/.config/dash-of-pi/config.json`:
   "video_res_height": 720,
   "segment_length_s": 60,
   "camera_device": "/dev/video0",
-  "mjpeg_quality": 5
+  "mjpeg_quality": 5,
+  "embed_timestamp": false
 }
 ```
 
@@ -86,6 +88,7 @@ Key settings:
   - Recommended: 5 (balanced), 3-4 (high quality), 7-8 (low quality for long-term storage)
 - `video_fps`: Recording framerate (default 24, can be increased to 30)
 - `video_bitrate`: Not used for MP4 export (uses quality setting instead)
+- `embed_timestamp`: Overlay timestamp on video (format: YYYY-MM-DD HH:MM:SS (UTC), positioned at top-left)
 
 Restart service to apply changes.
 

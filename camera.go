@@ -105,9 +105,27 @@ func (c *Camera) recordAndStreamSegment(filename string) error {
 		"-i", inputDevice,
 	)
 
+	// Build video filter chain
+	var videoFilters []string
+
 	// Only scale if camera doesn't support native resolution
 	if inputFormat != "video4linux2" && inputFormat != "v4l2" {
-		args = append(args, "-vf", fmt.Sprintf("scale=%d:%d", c.config.VideoResWidth, c.config.VideoResHeight))
+		videoFilters = append(videoFilters, fmt.Sprintf("scale=%d:%d", c.config.VideoResWidth, c.config.VideoResHeight))
+	}
+
+	// Add timestamp overlay if enabled
+	if c.config.EmbedTimestamp {
+		// Format: YYYY-MM-DD HH:MM:SS (UTC)
+		// Position: top-left with 10px padding
+		// Font size: 24, white text with black shadow for readability
+		// Note: In FFmpeg drawtext, colons in text need escaping, parentheses need double escaping
+		timestampFilter := "drawtext=text='%{localtime\\:%Y-%m-%d %H\\\\\\:%M\\\\\\:%S} \\\\(UTC\\\\)':fontcolor=white:fontsize=24:box=1:boxcolor=black@0.5:boxborderw=5:x=10:y=10"
+		videoFilters = append(videoFilters, timestampFilter)
+	}
+
+	// Apply video filters if any
+	if len(videoFilters) > 0 {
+		args = append(args, "-vf", strings.Join(videoFilters, ","))
 	}
 
 	args = append(args,

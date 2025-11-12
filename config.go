@@ -21,6 +21,7 @@ type Config struct {
 	SegmentLengthS   int    `json:"segment_length_s"` // seconds
 	CameraDevice     string `json:"camera_device"`    // e.g., /dev/video0, /dev/video1
 	MJPEGQuality     int    `json:"mjpeg_quality"`    // 2-31, lower = higher quality (default 5)
+	EmbedTimestamp   bool   `json:"embed_timestamp"`  // Whether to overlay timestamp on video
 }
 
 func DefaultConfig() *Config {
@@ -49,6 +50,7 @@ func DefaultConfig() *Config {
 		SegmentLengthS:  DefaultSegmentLengthS,
 		CameraDevice:    DefaultCameraDevice,
 		MJPEGQuality:    DefaultMJPEGQuality,
+		EmbedTimestamp:  DefaultEmbedTimestamp,
 	}
 }
 
