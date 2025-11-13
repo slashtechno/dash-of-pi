@@ -100,16 +100,28 @@ func (sm *StorageManager) enforceStorageCap() error {
 			return files[i].modTime.Before(files[j].modTime)
 		})
 
+		deletedCount := 0
 		for _, f := range files {
 			if totalSize <= capBytes {
 				break
 			}
 
 			if err := os.Remove(f.path); err == nil {
+				deletedCount++
 				totalSize -= f.size
 				sm.lastUsed = totalSize // Update cache after deletion
-				fmt.Printf("Deleted old video: %s\n", filepath.Base(f.path))
+				fmt.Printf("Deleted old video: %s (modified: %s, size: %.2f MB)\n", 
+					filepath.Base(f.path), 
+					f.modTime.Format("2006-01-02 15:04:05"), 
+					float64(f.size)/BytesPerMB)
 			}
+		}
+		
+		if deletedCount > 0 {
+			fmt.Printf("Storage cleanup complete: deleted %d video(s), now using %.2f GB / %d GB\n", 
+				deletedCount, 
+				float64(totalSize)/BytesPerGB, 
+				sm.storageCapGB)
 		}
 	}
 
@@ -157,6 +169,37 @@ func (sm *StorageManager) GetStorageStats() (used int64, cap int64, err error) {
 func (sm *StorageManager) Stop() {
 	sm.ticker.Stop()
 	close(sm.done)
+}
+
+// CleanupTempExportDirs removes any leftover temporary export directories
+// These can be left behind if the process crashes during export generation
+func (sm *StorageManager) CleanupTempExportDirs() int {
+	entries, err := os.ReadDir(sm.videoDir)
+	if err != nil {
+		fmt.Printf("Failed to read video directory for cleanup: %v\n", err)
+		return 0
+	}
+	
+	var cleaned int
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		
+		name := entry.Name()
+		// Check if it's a temporary export directory
+		if len(name) > 13 && name[:13] == ".temp_export_" {
+			dirPath := filepath.Join(sm.videoDir, name)
+			if err := os.RemoveAll(dirPath); err != nil {
+				fmt.Printf("Failed to remove temp export dir %s: %v\n", name, err)
+			} else {
+				fmt.Printf("Cleaned up leftover temp export directory: %s\n", name)
+				cleaned++
+			}
+		}
+	}
+	
+	return cleaned
 }
 
 func isVideoFile(name string) bool {

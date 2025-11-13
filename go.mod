@@ -5,8 +5,8 @@ go 1.24
 require (
 	github.com/adrg/xdg v0.4.0
 	github.com/golang-jwt/jwt/v5 v5.0.0
-	github.com/gorilla/mux v1.8.1
 	github.com/joho/godotenv v1.5.1
+	golang.org/x/exp v0.0.0-20240119083558-1b970713d09a
 )
 
 require golang.org/x/sys v0.0.0-20211025201205-69cdffdb9359 // indirect

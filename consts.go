@@ -8,14 +8,14 @@ import "time"
 
 const (
 	// Frame extraction and streaming rates
-	// Calculation: 1000ms / 25fps = 40ms per frame
+	// Calculation: 1000ms / 24fps = 41.67ms per frame
 	TargetStreamFPS       = 20 // Minimum acceptable FPS for live stream quality
-	FrameExtractionMS     = 40 // Extract frames every 40ms = 25 FPS (1000ms ÷ 25 = 40ms)
-	MJPEGStreamIntervalMS = 40 // Send MJPEG frames every 40ms = 25 FPS stream
+	FrameExtractionMS     = 16 // Extract frames every 16ms = 62 FPS (aggressive polling)
+	MJPEGStreamIntervalMS = 33 // Send MJPEG frames every 33ms = 30 FPS stream (was 40ms)
 
 	// Timeouts and intervals
-	// Calculation: 50 intervals × 40ms = 2000ms = 2 seconds
-	MJPEGNoFrameTimeout   = 50 // Disconnect after 50 missed frames (50 × 40ms = 2 seconds)
+	// Calculation: 50 intervals × 33ms = 1650ms ~= 1.65 seconds
+	MJPEGNoFrameTimeout   = 50 // Disconnect after 50 missed frames
 	StatusUpdateIntervalS = 5  // Frontend polls server status every 5 seconds
 
 	// Retry and reconnect

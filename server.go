@@ -15,16 +15,16 @@ import (
 )
 
 type APIServer struct {
-	config       *Config
-	camera       *Camera
-	storage      *StorageManager
-	logger       *Logger
-	auth         *AuthMiddleware
-	server       *http.Server
-	indexHTML    string
-	streamMgr    *StreamManager
-	exportInfo   *ExportInfo
-	exportMutex  sync.RWMutex
+	config      *Config
+	camera      *Camera
+	storage     *StorageManager
+	logger      *Logger
+	auth        *AuthMiddleware
+	server      *http.Server
+	indexHTML   string
+	streamMgr   *StreamManager
+	exportInfo  *ExportInfo
+	exportMutex sync.RWMutex
 }
 
 type ExportInfo struct {
@@ -67,27 +67,32 @@ func NewAPIServer(config *Config, camera *Camera, storage *StorageManager, logge
 	auth := NewAuthMiddleware(config.AuthToken)
 	streamMgr := NewStreamManager(config, logger)
 	camera.SetStreamManager(streamMgr)
-	
+
 	server := &APIServer{
-		config:    config,
-		camera:    camera,
-		storage:   storage,
-		logger:    logger,
-		auth:      auth,
-		streamMgr: streamMgr,
+		config:     config,
+		camera:     camera,
+		storage:    storage,
+		logger:     logger,
+		auth:       auth,
+		streamMgr:  streamMgr,
 		exportInfo: &ExportInfo{Available: false},
 	}
-	
+
 	// Check for existing export on startup
 	server.checkExistingExport()
-	
+
 	return server
 }
 
 func (s *APIServer) checkExistingExport() {
+	// First, clean up any leftover temporary export directories
+	if cleaned := s.storage.CleanupTempExportDirs(); cleaned > 0 {
+		s.logger.Printf("Cleaned up %d temporary export director%s", cleaned, map[bool]string{true: "y", false: "ies"}[cleaned == 1])
+	}
+
 	exportPath := filepath.Join(s.config.VideoDir, ".export", "current_export.mp4")
 	infoPath := filepath.Join(s.config.VideoDir, ".export", "export_info.json")
-	
+
 	if info, err := os.Stat(exportPath); err == nil {
 		if infoData, err := os.ReadFile(infoPath); err == nil {
 			var exportInfo ExportInfo
@@ -129,15 +134,15 @@ func (s *APIServer) Start() error {
 
 	// UI endpoints (no auth for now, add auth if frontend served elsewhere)
 	mux.HandleFunc("/", s.handleUI)
-	
+
 	// Serve static files from web directory
 	// Check multiple locations for the web directory
 	possibleWebDirs := []string{
-		"./web",                                       // Relative to working directory
-		"/var/lib/dash-of-pi/web",                    // Systemd service location
+		"./web",                   // Relative to working directory
+		"/var/lib/dash-of-pi/web", // Systemd service location
 		filepath.Join(filepath.Dir(os.Args[0]), "../web"), // Relative to binary
 	}
-	
+
 	for _, webDir := range possibleWebDirs {
 		if _, err := os.Stat(webDir); err == nil {
 			fs := http.FileServer(http.Dir(webDir))
@@ -206,11 +211,11 @@ func (s *APIServer) handleUI(w http.ResponseWriter, r *http.Request) {
 	// Try to serve from web directory first
 	// Check multiple locations for the web directory
 	possiblePaths := []string{
-		"./web/index.html",                            // Relative to working directory
-		"/var/lib/dash-of-pi/web/index.html",         // Systemd service location
+		"./web/index.html",                                           // Relative to working directory
+		"/var/lib/dash-of-pi/web/index.html",                         // Systemd service location
 		filepath.Join(filepath.Dir(os.Args[0]), "../web/index.html"), // Relative to binary
 	}
-	
+
 	for _, indexPath := range possiblePaths {
 		if data, err := os.ReadFile(indexPath); err == nil {
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -580,7 +585,7 @@ func (s *APIServer) handleGenerateExport(w http.ResponseWriter, r *http.Request)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{
-		"status": "started",
+		"status":  "started",
 		"message": "Export generation started",
 	})
 }
@@ -588,6 +593,11 @@ func (s *APIServer) handleGenerateExport(w http.ResponseWriter, r *http.Request)
 // generateExportAsync generates an export in the background
 func (s *APIServer) generateExportAsync(startTime, endTime time.Time) {
 	s.logger.Printf("Starting async export generation from %s to %s", startTime.Format(time.RFC3339), endTime.Format(time.RFC3339))
+
+	// Clean up any leftover temporary export directories from previous runs
+	if cleaned := s.storage.CleanupTempExportDirs(); cleaned > 0 {
+		s.logger.Printf("Cleaned up %d temporary export director%s before starting export", cleaned, map[bool]string{true: "y", false: "ies"}[cleaned == 1])
+	}
 
 	// Set initial progress state
 	s.exportMutex.Lock()
@@ -642,7 +652,9 @@ func (s *APIServer) generateExportAsync(startTime, endTime time.Time) {
 		}
 
 		modTime := info.ModTime()
-		if modTime.After(startTime) && modTime.Before(endTime) {
+		// Include files within the time range (inclusive of boundaries)
+		// Use After/Before for start, and not After for end to include files up to and including endTime
+		if (modTime.After(startTime) || modTime.Equal(startTime)) && !modTime.After(endTime) {
 			mjpegFiles = append(mjpegFiles, filepath.Join(s.config.VideoDir, name))
 		}
 	}
@@ -845,7 +857,7 @@ func (s *APIServer) generateExportAsync(startTime, endTime time.Time) {
 				speedMBps := float64(info.Size()-lastSize) / BytesPerMB / 5.0
 				s.logger.Printf("Encoding progress: %.1f MB (%.1f MB/s)", sizeMB, speedMBps)
 				lastSize = info.Size()
-				
+
 				// Update progress for frontend
 				s.exportMutex.Lock()
 				s.exportInfo.Progress = fmt.Sprintf("Encoding... %.1f MB (%.1f MB/s)", sizeMB, speedMBps)

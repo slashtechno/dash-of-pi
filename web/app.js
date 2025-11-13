@@ -221,11 +221,9 @@ async function generateVideo(type) {
 			return;
 		}
 		
-		// Treat input as UTC
+		// Treat input as UTC - append Z to force UTC interpretation
 		startDate = new Date(startInput + ':00Z').toISOString();
-		endDate = new Date(endInput + ':00Z').toISOString();
-		
-		const daysDiff = (new Date(endDate) - new Date(startDate)) / (1000 * 60 * 60 * 24);
+		endDate = new Date(endInput + ':00Z').toISOString();		const daysDiff = (new Date(endDate) - new Date(startDate)) / (1000 * 60 * 60 * 24);
 		if (daysDiff > 1 && !confirm('⚠️ Video generation may take several minutes for large date ranges (' + Math.round(daysDiff) + ' days selected). The export will be available for download when complete. Continue?')) {
 			return;
 		}

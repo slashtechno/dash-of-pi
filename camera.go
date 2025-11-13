@@ -11,6 +11,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"golang.org/x/exp/mmap"
 )
 
 // Camera handles video capture and recording
@@ -100,7 +102,7 @@ func (c *Camera) recordAndStreamSegment(filename string) error {
 	args = append(args,
 		"-framerate", fmt.Sprintf("%d", c.config.VideoFPS),
 		// Memory-efficient buffer settings for Pi Zero 2W (512MB RAM)
-		"-rtbufsize", "5M",      // Reduce real-time buffer size (default can be 3GB!)
+		"-rtbufsize", "5M", // Reduce real-time buffer size (default can be 3GB!)
 		"-thread_queue_size", "16", // Reduce thread queue (default 8, but keep minimal)
 		"-i", inputDevice,
 	)
@@ -119,7 +121,8 @@ func (c *Camera) recordAndStreamSegment(filename string) error {
 		// Position: top-left with 10px padding
 		// Font size: 24, white text with black shadow for readability
 		// Note: In FFmpeg drawtext, colons in text need escaping, parentheses need double escaping
-		timestampFilter := "drawtext=text='%{localtime\\:%Y-%m-%d %H\\\\\\:%M\\\\\\:%S} \\\\(UTC\\\\)':fontcolor=white:fontsize=24:box=1:boxcolor=black@0.5:boxborderw=5:x=10:y=10"
+		// Use gmtime instead of localtime to display UTC
+		timestampFilter := "drawtext=text='%{gmtime\\:%Y-%m-%d %H\\\\\\:%M\\\\\\:%S} \\\\(UTC\\\\)':fontcolor=white:fontsize=24:box=1:boxcolor=black@0.5:boxborderw=5:x=10:y=10"
 		videoFilters = append(videoFilters, timestampFilter)
 	}
 
@@ -132,7 +135,7 @@ func (c *Camera) recordAndStreamSegment(filename string) error {
 		"-c:v", "mjpeg",
 		"-q:v", fmt.Sprintf("%d", c.config.MJPEGQuality),
 		"-r", fmt.Sprintf("%d", c.config.VideoFPS),
-		"-huffman", "optimal",           // Use optimal Huffman tables (better compression)
+		"-huffman", "optimal", // Use optimal Huffman tables (better compression)
 		"-force_duplicated_matrix", "1", // Ensure proper quantization matrices
 		"-t", fmt.Sprintf("%d", c.config.SegmentLengthS),
 		"-f", "mjpeg",
@@ -188,10 +191,10 @@ func (c *Camera) recordAndStreamSegment(filename string) error {
 					// Using first/last bytes and length as a quick hash
 					frameHash := uint64(len(frameData))
 					if len(frameData) >= 16 {
-						frameHash ^= uint64(frameData[0])<<56 | uint64(frameData[8])<<32 | 
-									 uint64(frameData[len(frameData)-8])<<16 | uint64(frameData[len(frameData)-1])
+						frameHash ^= uint64(frameData[0])<<56 | uint64(frameData[8])<<32 |
+							uint64(frameData[len(frameData)-8])<<16 | uint64(frameData[len(frameData)-1])
 					}
-					
+
 					// Only update if frame changed
 					if frameHash != lastFrameHash {
 						c.streamManager.UpdateFrame(frameData)
@@ -221,49 +224,53 @@ func (c *Camera) recordAndStreamSegment(filename string) error {
 	return recordErr
 }
 
-// extractFrameFromMJPEG extracts a frame from an MJPEG file that's being written
+// extractFrameFromMJPEG extracts a frame from an MJPEG file using mmap for efficiency
 func (c *Camera) extractFrameFromMJPEG(filename string) []byte {
-	file, err := os.Open(filename)
+	// Use memory mapping for efficient random access (especially on Pi)
+	r, err := mmap.Open(filename)
 	if err != nil {
-		return nil
-	}
-	defer file.Close()
+		// Fallback to traditional file method if mmap fails
+		file, err := os.Open(filename)
+		if err != nil {
+			return nil
+		}
+		defer file.Close()
 
-	info, err := file.Stat()
-	if err != nil {
-		return nil
+		info, err := file.Stat()
+		if err != nil {
+			return nil
+		}
+		return c.extractFrameFromMJPEGFallback(file, info.Size())
 	}
+	defer r.Close()
 
-	fileSize := info.Size()
-	if fileSize < MinFileSize {
-		return nil
-	}
-
-	// Read last portion of file for frame extraction
-	readSize := int64(FrameBufferSizeKB * BytesPerKB)
-	if fileSize < readSize {
-		readSize = fileSize
-	}
-
-	_, err = file.Seek(-readSize, 2)
-	if err != nil {
+	// Get the entire mapped data as slice
+	bufLen := r.Len()
+	if bufLen < MinFileSize {
 		return nil
 	}
 
-	buf := make([]byte, readSize)
-	n, err := file.Read(buf)
+	// Create a temporary buffer to read the data safely
+	buf := make([]byte, bufLen)
+	n, err := r.ReadAt(buf, 0)
 	if err != nil && err != io.EOF {
 		return nil
 	}
-
 	if n == 0 {
 		return nil
 	}
+	buf = buf[:n]
 
 	// Find the LAST complete JPEG frame by searching backwards from end
 	// Step 1: Find the most recent JPEG end marker (0xFF 0xD9)
 	lastFrameEnd := -1
-	for i := n - 2; i >= 0; i-- {
+	searchStart := len(buf) - 1
+	if searchStart < 1 {
+		return nil
+	}
+
+	// Scan from end backwards for JPEG end marker
+	for i := searchStart - 1; i >= 0; i-- {
 		if buf[i] == 0xFF && buf[i+1] == 0xD9 {
 			lastFrameEnd = i + 2
 			break
@@ -275,7 +282,7 @@ func (c *Camera) extractFrameFromMJPEG(filename string) []byte {
 	}
 
 	// Step 2: Search backwards from end marker to find matching start marker
-	// Limit search to MaxFrameSizeKB to avoid finding old frames (prevents rubber-banding)
+	// Limit search to MaxFrameSizeKB to avoid finding old frames
 	searchLimit := lastFrameEnd - (MaxFrameSizeKB * BytesPerKB)
 	if searchLimit < 0 {
 		searchLimit = 0
@@ -292,6 +299,59 @@ func (c *Camera) extractFrameFromMJPEG(filename string) []byte {
 	}
 
 	return nil // No matching start marker found
+}
+
+// extractFrameFromMJPEGFallback uses traditional file reading as fallback
+func (c *Camera) extractFrameFromMJPEGFallback(file *os.File, fileSize int64) []byte {
+	// Read last portion of file for frame extraction
+	readSize := int64(FrameBufferSizeKB * BytesPerKB)
+	if fileSize < readSize {
+		readSize = fileSize
+	}
+
+	_, err := file.Seek(-readSize, 2)
+	if err != nil {
+		return nil
+	}
+
+	buf := make([]byte, readSize)
+	n, err := file.Read(buf)
+	if err != nil && err != io.EOF {
+		return nil
+	}
+
+	if n == 0 {
+		return nil
+	}
+
+	// Find the LAST complete JPEG frame by searching backwards from end
+	lastFrameEnd := -1
+	for i := n - 2; i >= 0; i-- {
+		if buf[i] == 0xFF && buf[i+1] == 0xD9 {
+			lastFrameEnd = i + 2
+			break
+		}
+	}
+
+	if lastFrameEnd == -1 {
+		return nil
+	}
+
+	searchLimit := lastFrameEnd - (MaxFrameSizeKB * BytesPerKB)
+	if searchLimit < 0 {
+		searchLimit = 0
+	}
+
+	for i := lastFrameEnd - 2; i >= searchLimit; i-- {
+		if buf[i] == 0xFF && buf[i+1] == 0xD8 {
+			frameSize := lastFrameEnd - i
+			frameData := make([]byte, frameSize)
+			copy(frameData, buf[i:lastFrameEnd])
+			return frameData
+		}
+	}
+
+	return nil
 }
 
 // getCameraInput returns the format and device based on OS
