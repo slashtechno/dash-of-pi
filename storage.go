@@ -203,6 +203,5 @@ func (sm *StorageManager) CleanupTempExportDirs() int {
 }
 
 func isVideoFile(name string) bool {
-	ext := filepath.Ext(name)
-	return ext == ".mjpeg"
+	return IsMJPEGFile(name)
 }

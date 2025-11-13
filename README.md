@@ -75,7 +75,7 @@ Config stored at `~/.config/dash-of-pi/config.json`:
   "video_res_height": 720,
   "segment_length_s": 60,
   "camera_device": "/dev/video0",
-  "mjpeg_quality": 5,
+  "mjpeg_quality": 8,
   "embed_timestamp": false
 }
 ```
@@ -84,8 +84,8 @@ Key settings:
 - `camera_device`: Video input device (e.g., `/dev/video0`, `/dev/video1`)
 - `storage_cap_gb`: Max disk usage before deleting oldest videos
 - `segment_length_s`: Recording segment duration in seconds
-- `mjpeg_quality`: MJPEG recording quality (2-31, default 5; lower = higher quality, higher storage)
-  - Recommended: 5 (balanced), 3-4 (high quality), 7-8 (low quality for long-term storage)
+- `mjpeg_quality`: MJPEG recording quality (2-31, default 8; lower = higher quality, higher storage)
+  - Recommended: 8 (balanced), 3-4 (high quality), 10+ (low quality for long-term storage)
 - `video_fps`: Recording framerate (default 24, can be increased to 30)
 - `video_bitrate`: Not used for MP4 export (uses quality setting instead)
 - `embed_timestamp`: Overlay timestamp on video (format: YYYY-MM-DD HH:MM:SS (UTC), positioned at top-left)

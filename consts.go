@@ -8,13 +8,10 @@ import "time"
 
 const (
 	// Frame extraction and streaming rates
-	// Calculation: 1000ms / 24fps = 41.67ms per frame
-	TargetStreamFPS       = 20 // Minimum acceptable FPS for live stream quality
-	FrameExtractionMS     = 16 // Extract frames every 16ms = 62 FPS (aggressive polling)
-	MJPEGStreamIntervalMS = 33 // Send MJPEG frames every 33ms = 30 FPS stream (was 40ms)
+	TargetStreamFPS       = 24 // Target FPS from camera
+	MJPEGStreamIntervalMS = 33 // Send frames every 33ms = 30 FPS stream
 
 	// Timeouts and intervals
-	// Calculation: 50 intervals × 33ms = 1650ms ~= 1.65 seconds
 	MJPEGNoFrameTimeout   = 50 // Disconnect after 50 missed frames
 	StatusUpdateIntervalS = 5  // Frontend polls server status every 5 seconds
 
@@ -29,20 +26,14 @@ const (
 
 const (
 	// Frame extraction buffers
-	// Why: MJPEG file is being written continuously. We read from the END of the file
-	//      to get the most recent frame. 256KB ensures we capture 2-3 frames worth of
-	//      data, allowing us to find the most recent complete frame.
 	FrameBufferSizeKB = 256 // Read last 256KB from MJPEG file (typical frame: 80-150KB)
 	MaxFrameSizeKB    = 200 // Max size to search backwards for frame start (prevents old frames)
 	MinFileSize       = 100 // Skip extraction if file too small (not enough data yet)
 
 	// FFmpeg stderr capture
-	// Why: Capture FFmpeg error messages for debugging. 4KB is enough for typical errors
 	FFmpegStderrBufferKB = 4 // 4KB buffer for FFmpeg error messages
 
 	// HTTP and network
-	// Why: Prevents malicious clients from sending huge headers that consume memory.
-	//      1MB is more than enough for legitimate HTTP headers (typical: <10KB)
 	HTTPMaxHeaderBytes = 1 << 20 // 1MB = maximum HTTP header size (security limit)
 )
 
@@ -85,7 +76,7 @@ const (
 	DefaultVideoWidth     = 1280
 	DefaultVideoHeight    = 720
 	DefaultSegmentLengthS = 60   // seconds
-	DefaultMJPEGQuality   = 5    // 2-31 scale, lower is better
+	DefaultMJPEGQuality   = 8    // 2-31 scale, lower is better, 8=good balance
 	DefaultEmbedTimestamp = true // Embed timestamp by default
 
 	// Device defaults
@@ -99,10 +90,6 @@ const (
 const (
 	// MPEG-4 quality for exports (q:v scale)
 	ExportVideoQuality = 2 // 1-31 scale, lower=better quality (2=very high)
-
-	// MJPEG quality range
-	MJPEGQualityMin = 2  // Best quality (largest files)
-	MJPEGQualityMax = 31 // Worst quality (smallest files)
 )
 
 // =============================================================================
@@ -126,6 +113,9 @@ const (
 	ExtensionMJPEG = ".mjpeg"
 	ExtensionMP4   = ".mp4"
 	ExtensionWebM  = ".webm"
+
+	// Export filename
+	ExportFilename = "current_export.mp4"
 )
 
 // =============================================================================
@@ -145,7 +135,7 @@ func IsPlayableVideo(filename string) bool {
 	return HasExtension(filename, ExtensionMP4) || HasExtension(filename, ExtensionWebM)
 }
 
-// IsMJPEGFile checks if file is an MJPEG recording
+// IsMJPEGFile checks if file is a video recording (MJPEG or MP4)
 func IsMJPEGFile(filename string) bool {
-	return HasExtension(filename, ExtensionMJPEG)
+	return HasExtension(filename, ExtensionMJPEG) || HasExtension(filename, ExtensionMP4)
 }

@@ -11,8 +11,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"golang.org/x/exp/mmap"
 )
 
 // Camera handles video capture and recording
@@ -24,29 +22,37 @@ type Camera struct {
 	lastErrorTime time.Time
 	recordCmd     *exec.Cmd
 	cmdMu         sync.Mutex
+	videoEncoder  string
 }
 
 func NewCamera(config *Config, logger *Logger) (*Camera, error) {
-	return &Camera{
+	camera := &Camera{
 		config: config,
 		logger: logger,
 		done:   make(chan struct{}),
-	}, nil
+	}
+	
+	// Detect available encoder on startup
+	camera.videoEncoder = detectVideoEncoder(logger)
+	logger.Printf("Using video encoder: %s", camera.videoEncoder)
+	
+	return camera, nil
 }
 
-// SetStreamManager connects the camera to a stream manager for live streaming
+// SetStreamManager connects the camera to a stream manager
 func (c *Camera) SetStreamManager(sm *StreamManager) {
 	c.streamManager = sm
 }
 
-// Start begins continuous recording and streaming from a single camera capture
+// Start begins continuous recording and streaming
 func (c *Camera) Start(videoDir string) error {
-	// Ensure video directory exists
 	if err := os.MkdirAll(videoDir, 0755); err != nil {
 		return fmt.Errorf("failed to create video directory: %w", err)
 	}
 
-	// Single FFmpeg process captures once and outputs to both file and stream
+	// Start background frame extraction to cache frames for faster /api/stream/frame responses
+	go c.backgroundFrameUpdate(videoDir)
+
 	for {
 		select {
 		case <-c.done:
@@ -55,20 +61,19 @@ func (c *Camera) Start(videoDir string) error {
 		}
 
 		timestamp := time.Now().Format("2006-01-02_15-04-05")
+		// Record to MJPEG (Motion JPEG) - supports real-time streaming and safe interruption recovery
+		// Each frame is a complete JPEG, so files remain readable during recording
 		filename := filepath.Join(videoDir, fmt.Sprintf("dashcam_%s.mjpeg", timestamp))
 
 		c.logger.Debugf("Starting recording segment: %s", filename)
 
-		// Record and stream simultaneously from single camera input
 		if err := c.recordAndStreamSegment(filename); err != nil {
-			// Avoid spamming logs with repeated errors
 			if time.Since(c.lastErrorTime) > 5*time.Second {
 				c.logger.Printf("Recording error: %v", err)
 				c.lastErrorTime = time.Now()
 			}
 		}
 
-		// Check if we should stop
 		select {
 		case <-c.done:
 			return nil
@@ -78,21 +83,39 @@ func (c *Camera) Start(videoDir string) error {
 	}
 }
 
-// recordAndStreamSegment records to file AND streams JPEG frames
+// backgroundFrameUpdate continuously extracts and caches frames from the latest segment
+// This ensures fresh frames are always available for the /api/stream/frame endpoint
+// Runs at 10 Hz (100ms) for near-realtime performance
+func (c *Camera) backgroundFrameUpdate(videoDir string) {
+	ticker := time.NewTicker(100 * time.Millisecond) // Update frame at 10 Hz
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-c.done:
+			return
+		case <-ticker.C:
+			frameData := c.ExtractFrameFromLatestSegment(videoDir)
+			if len(frameData) > 0 && c.streamManager != nil {
+				c.streamManager.UpdateFrame(frameData)
+			}
+		}
+	}
+}
+
+// recordAndStreamSegment records video to MJPEG (Motion JPEG) format
+// MJPEG supports real-time streaming and safe recovery from interrupted recordings
+// Each frame is a complete JPEG, so the file is always readable even while recording
 func (c *Camera) recordAndStreamSegment(filename string) error {
-	// Get camera input based on OS
 	inputFormat, inputDevice := c.getCameraInput()
 
-	// Build FFmpeg command with memory-efficient settings for Pi Zero 2W
 	args := []string{
 		"-y",
 		"-loglevel", "warning",
 		"-f", inputFormat,
 	}
 
-	// For v4l2 (Linux), request specific input format to reduce memory usage
 	if inputFormat == "video4linux2" || inputFormat == "v4l2" {
-		// Request MJPEG from camera if possible (reduces CPU/memory load)
 		args = append(args,
 			"-input_format", "mjpeg",
 			"-video_size", fmt.Sprintf("%dx%d", c.config.VideoResWidth, c.config.VideoResHeight),
@@ -101,42 +124,29 @@ func (c *Camera) recordAndStreamSegment(filename string) error {
 
 	args = append(args,
 		"-framerate", fmt.Sprintf("%d", c.config.VideoFPS),
-		// Memory-efficient buffer settings for Pi Zero 2W (512MB RAM)
-		"-rtbufsize", "5M", // Reduce real-time buffer size (default can be 3GB!)
-		"-thread_queue_size", "16", // Reduce thread queue (default 8, but keep minimal)
+		"-rtbufsize", "5M",
+		"-thread_queue_size", "16",
 		"-i", inputDevice,
 	)
 
-	// Build video filter chain
+	// Build video filters
 	var videoFilters []string
-
-	// Only scale if camera doesn't support native resolution
 	if inputFormat != "video4linux2" && inputFormat != "v4l2" {
 		videoFilters = append(videoFilters, fmt.Sprintf("scale=%d:%d", c.config.VideoResWidth, c.config.VideoResHeight))
 	}
-
-	// Add timestamp overlay if enabled
 	if c.config.EmbedTimestamp {
-		// Format: YYYY-MM-DD HH:MM:SS (UTC)
-		// Position: top-left with 10px padding
-		// Font size: 24, white text with black shadow for readability
-		// Note: In FFmpeg drawtext, colons in text need escaping, parentheses need double escaping
-		// Use gmtime instead of localtime to display UTC
 		timestampFilter := "drawtext=text='%{gmtime\\:%Y-%m-%d %H\\\\\\:%M\\\\\\:%S} \\\\(UTC\\\\)':fontcolor=white:fontsize=24:box=1:boxcolor=black@0.5:boxborderw=5:x=10:y=10"
 		videoFilters = append(videoFilters, timestampFilter)
 	}
-
-	// Apply video filters if any
 	if len(videoFilters) > 0 {
 		args = append(args, "-vf", strings.Join(videoFilters, ","))
 	}
 
+	// Encode to MJPEG (Motion JPEG) for real-time streaming and robust recovery
 	args = append(args,
 		"-c:v", "mjpeg",
-		"-q:v", fmt.Sprintf("%d", c.config.MJPEGQuality),
+		"-q:v", "8",  // JPEG quality (2-31, lower=better, 8=good balance)
 		"-r", fmt.Sprintf("%d", c.config.VideoFPS),
-		"-huffman", "optimal", // Use optimal Huffman tables (better compression)
-		"-force_duplicated_matrix", "1", // Ensure proper quantization matrices
 		"-t", fmt.Sprintf("%d", c.config.SegmentLengthS),
 		"-f", "mjpeg",
 		filename,
@@ -160,7 +170,7 @@ func (c *Camera) recordAndStreamSegment(filename string) error {
 		return err
 	}
 
-	// Capture ffmpeg stderr to help diagnose issues
+	// Capture stderr for debugging
 	var stderrOutput strings.Builder
 	go func() {
 		buf := make([]byte, FFmpegStderrBufferKB*BytesPerKB)
@@ -175,40 +185,6 @@ func (c *Camera) recordAndStreamSegment(filename string) error {
 		}
 	}()
 
-	// Extract frames from the MJPEG file as it's being written
-	go func() {
-		ticker := time.NewTicker(time.Duration(FrameExtractionMS) * time.Millisecond)
-		defer ticker.Stop()
-		frameCount := int64(0)
-		var lastFrameHash uint64 // Simple hash to detect duplicates
-
-		for {
-			select {
-			case <-ticker.C:
-				frameData := c.extractFrameFromMJPEG(filename)
-				if len(frameData) > 0 && c.streamManager != nil {
-					// Compute simple hash to detect duplicate frames
-					// Using first/last bytes and length as a quick hash
-					frameHash := uint64(len(frameData))
-					if len(frameData) >= 16 {
-						frameHash ^= uint64(frameData[0])<<56 | uint64(frameData[8])<<32 |
-							uint64(frameData[len(frameData)-8])<<16 | uint64(frameData[len(frameData)-1])
-					}
-
-					// Only update if frame changed
-					if frameHash != lastFrameHash {
-						c.streamManager.UpdateFrame(frameData)
-						lastFrameHash = frameHash
-						frameCount++
-					}
-				}
-			case <-time.After(time.Duration(c.config.SegmentLengthS) * time.Second):
-				c.logger.Debugf("Segment complete: extracted %d unique frames", frameCount)
-				return
-			}
-		}
-	}()
-
 	// Wait for recording to complete
 	recordErr := recordCmd.Wait()
 
@@ -216,7 +192,6 @@ func (c *Camera) recordAndStreamSegment(filename string) error {
 	c.recordCmd = nil
 	c.cmdMu.Unlock()
 
-	// Log ffmpeg errors if recording failed
 	if recordErr != nil && stderrOutput.Len() > 0 {
 		c.logger.Printf("FFmpeg error output: %s", stderrOutput.String())
 	}
@@ -224,92 +199,85 @@ func (c *Camera) recordAndStreamSegment(filename string) error {
 	return recordErr
 }
 
-// extractFrameFromMJPEG extracts a frame from an MJPEG file using mmap for efficiency
-func (c *Camera) extractFrameFromMJPEG(filename string) []byte {
-	// Use memory mapping for efficient random access (especially on Pi)
-	r, err := mmap.Open(filename)
+// ExtractFrameFromLatestSegment extracts a JPEG frame from the most recent MJPEG segment
+// MJPEG is just concatenated JPEGs, so we read the last JPEG directly from the file
+// This is near-instantaneous (no FFmpeg overhead) and works even while recording
+func (c *Camera) ExtractFrameFromLatestSegment(videoDir string) []byte {
+	// Find the latest MJPEG file
+	entries, err := os.ReadDir(videoDir)
 	if err != nil {
-		// Fallback to traditional file method if mmap fails
-		file, err := os.Open(filename)
+		c.logger.Printf("[WARN] Failed to read video directory '%s': %v", videoDir, err)
+		return nil
+	}
+
+	var latestFile string
+	var latestTime time.Time
+
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		if !strings.HasSuffix(name, ".mjpeg") {
+			continue
+		}
+
+		info, err := entry.Info()
 		if err != nil {
-			return nil
+			c.logger.Debugf("Failed to get info for file '%s': %v", name, err)
+			continue
 		}
-		defer file.Close()
 
-		info, err := file.Stat()
-		if err != nil {
-			return nil
-		}
-		return c.extractFrameFromMJPEGFallback(file, info.Size())
-	}
-	defer r.Close()
-
-	// Get the entire mapped data as slice
-	bufLen := r.Len()
-	if bufLen < MinFileSize {
-		return nil
-	}
-
-	// Create a temporary buffer to read the data safely
-	buf := make([]byte, bufLen)
-	n, err := r.ReadAt(buf, 0)
-	if err != nil && err != io.EOF {
-		return nil
-	}
-	if n == 0 {
-		return nil
-	}
-	buf = buf[:n]
-
-	// Find the LAST complete JPEG frame by searching backwards from end
-	// Step 1: Find the most recent JPEG end marker (0xFF 0xD9)
-	lastFrameEnd := -1
-	searchStart := len(buf) - 1
-	if searchStart < 1 {
-		return nil
-	}
-
-	// Scan from end backwards for JPEG end marker
-	for i := searchStart - 1; i >= 0; i-- {
-		if buf[i] == 0xFF && buf[i+1] == 0xD9 {
-			lastFrameEnd = i + 2
-			break
+		if info.ModTime().After(latestTime) {
+			latestTime = info.ModTime()
+			latestFile = filepath.Join(videoDir, name)
 		}
 	}
 
-	if lastFrameEnd == -1 {
-		return nil // No complete frame found
+	if latestFile == "" {
+		c.logger.Debugf("No video segments found in '%s' - recording may be initializing", videoDir)
+		return nil
 	}
 
-	// Step 2: Search backwards from end marker to find matching start marker
-	// Limit search to MaxFrameSizeKB to avoid finding old frames
-	searchLimit := lastFrameEnd - (MaxFrameSizeKB * BytesPerKB)
-	if searchLimit < 0 {
-		searchLimit = 0
+	// Extract the last JPEG frame directly from the MJPEG file
+	// MJPEG = concatenated JPEGs with markers: FFD8 (start) ... FFD9 (end)
+	frameData := extractLastJPEGFromMJPEG(latestFile)
+	if len(frameData) == 0 {
+		c.logger.Debugf("Could not extract JPEG frame from '%s'", filepath.Base(latestFile))
+		return nil
 	}
 
-	for i := lastFrameEnd - 2; i >= searchLimit; i-- {
-		if buf[i] == 0xFF && buf[i+1] == 0xD8 {
-			// Found frame start - extract and return
-			frameSize := lastFrameEnd - i
-			frameData := make([]byte, frameSize)
-			copy(frameData, buf[i:lastFrameEnd])
-			return frameData
-		}
-	}
-
-	return nil // No matching start marker found
+	return frameData
 }
 
-// extractFrameFromMJPEGFallback uses traditional file reading as fallback
-func (c *Camera) extractFrameFromMJPEGFallback(file *os.File, fileSize int64) []byte {
-	// Read last portion of file for frame extraction
-	readSize := int64(FrameBufferSizeKB * BytesPerKB)
-	if fileSize < readSize {
+// extractLastJPEGFromMJPEG reads the last complete JPEG frame from an MJPEG file
+// by scanning backwards for JPEG markers. This is near-instantaneous (no FFmpeg).
+func extractLastJPEGFromMJPEG(filepath string) []byte {
+	file, err := os.Open(filepath)
+	if err != nil {
+		return nil
+	}
+	defer file.Close()
+
+	// Get file size
+	fileInfo, err := file.Stat()
+	if err != nil {
+		return nil
+	}
+	fileSize := fileInfo.Size()
+
+	if fileSize < 4 {
+		return nil // Too small to be a valid JPEG
+	}
+
+	// Read the last 1MB of the file (should contain at least one complete JPEG frame)
+	readSize := int64(1024 * 1024) // 1MB
+	if readSize > fileSize {
 		readSize = fileSize
 	}
 
-	_, err := file.Seek(-readSize, 2)
+	startPos := fileSize - readSize
+	_, err = file.Seek(startPos, 0)
 	if err != nil {
 		return nil
 	}
@@ -319,39 +287,53 @@ func (c *Camera) extractFrameFromMJPEGFallback(file *os.File, fileSize int64) []
 	if err != nil && err != io.EOF {
 		return nil
 	}
+	buf = buf[:n]
 
-	if n == 0 {
-		return nil
-	}
+	// Scan backwards for JPEG end marker (FFD9) followed by next start marker (FFD8) or EOF
+	// Work backwards from the end to find the last complete JPEG frame
+	var jpegEnd int64 = -1
+	var jpegStart int64 = -1
 
-	// Find the LAST complete JPEG frame by searching backwards from end
-	lastFrameEnd := -1
-	for i := n - 2; i >= 0; i-- {
-		if buf[i] == 0xFF && buf[i+1] == 0xD9 {
-			lastFrameEnd = i + 2
+	// Find the last FFD9 (JPEG end marker)
+	for i := len(buf) - 1; i > 0; i-- {
+		if buf[i] == 0xD9 && buf[i-1] == 0xFF {
+			jpegEnd = int64(i) + 1
 			break
 		}
 	}
 
-	if lastFrameEnd == -1 {
-		return nil
+	if jpegEnd == -1 {
+		return nil // No JPEG end marker found
 	}
 
-	searchLimit := lastFrameEnd - (MaxFrameSizeKB * BytesPerKB)
+	// Find the FFD8 (JPEG start marker) before the end
+	// Limit search to MaxFrameSizeKB to avoid finding very old frames
+	searchLimit := int(jpegEnd) - (MaxFrameSizeKB * BytesPerKB)
 	if searchLimit < 0 {
 		searchLimit = 0
 	}
 
-	for i := lastFrameEnd - 2; i >= searchLimit; i-- {
-		if buf[i] == 0xFF && buf[i+1] == 0xD8 {
-			frameSize := lastFrameEnd - i
-			frameData := make([]byte, frameSize)
-			copy(frameData, buf[i:lastFrameEnd])
-			return frameData
+	for i := int(jpegEnd) - 2; i >= searchLimit; i-- {
+		if buf[i] == 0xD8 && buf[i-1] == 0xFF {
+			jpegStart = int64(i) - 1
+			break
 		}
 	}
 
-	return nil
+	if jpegStart == -1 {
+		return nil // No JPEG start marker found
+	}
+
+	// Return the JPEG frame
+	return buf[jpegStart:jpegEnd]
+}
+
+// min returns the minimum of two integers
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 // getCameraInput returns the format and device based on OS
@@ -361,7 +343,7 @@ func (c *Camera) getCameraInput() (string, string) {
 		return "avfoundation", "0"
 	case "windows":
 		return "dshow", "video=\"USB Video Device\""
-	default: // linux
+	default:
 		device := c.config.CameraDevice
 		if device == "" {
 			device = "/dev/video0"
@@ -380,14 +362,70 @@ func (c *Camera) Stop() {
 	}
 }
 
+// detectVideoEncoder checks available encoders and returns the best one
+// Priority: h264_v4l2m2m (Pi hardware) > h264_vaapi (generic hardware) > libopenh264 (open) > libx264 (fallback)
+func detectVideoEncoder(logger *Logger) string {
+	cmd := exec.Command("ffmpeg", "-encoders")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		logger.Debugf("Failed to query FFmpeg encoders: %v", err)
+		return "libopenh264"
+	}
+	
+	encodersOutput := string(output)
+	
+	// Priority list of encoders to check
+	preferredEncoders := []string{
+		"h264_v4l2m2m",  // Raspberry Pi hardware encoder
+		"h264_vaapi",    // Generic hardware encoder
+		"libopenh264",   // Open-source H.264
+		"libx264",       // Software fallback
+	}
+	
+	for _, encoder := range preferredEncoders {
+		if strings.Contains(encodersOutput, encoder) {
+			// Test if encoder actually works with a quick validation
+			if isEncoderUsable(encoder, logger) {
+				return encoder
+			}
+		}
+	}
+	
+	// Ultimate fallback
+	logger.Printf("[WARN] No suitable H.264 encoders found, defaulting to libopenh264")
+	return "libopenh264"
+}
+
+// isEncoderUsable tests if an encoder can actually be used
+func isEncoderUsable(encoder string, logger *Logger) bool {
+	// Skip hardware encoders that require specific hardware
+	if encoder == "h264_v4l2m2m" || encoder == "h264_vaapi" {
+		// Try a quick test to see if the encoder works
+		testCmd := exec.Command("ffmpeg",
+			"-f", "lavfi",
+			"-i", "color=c=black:s=640x480:d=0.1",
+			"-c:v", encoder,
+			"-f", "null",
+			"-",
+		)
+		
+		if err := testCmd.Run(); err != nil {
+			logger.Debugf("Encoder %s not usable: %v", encoder, err)
+			return false
+		}
+	}
+	
+	return true
+}
+
 // StreamManager handles HTTP streaming of video to clients
 type StreamManager struct {
-	logger   *Logger
-	config   *Config
-	done     chan struct{}
-	stopOnce sync.Once
-	mu       sync.RWMutex
-	frameJPG []byte
+	logger      *Logger
+	config      *Config
+	done        chan struct{}
+	stopOnce    sync.Once
+	mu          sync.RWMutex
+	latestFrame []byte
 }
 
 func NewStreamManager(config *Config, logger *Logger) *StreamManager {
@@ -415,8 +453,8 @@ func (sm *StreamManager) UpdateFrame(frameData []byte) {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 	if len(frameData) > 0 {
-		sm.frameJPG = make([]byte, len(frameData))
-		copy(sm.frameJPG, frameData)
+		sm.latestFrame = make([]byte, len(frameData))
+		copy(sm.latestFrame, frameData)
 	}
 }
 
@@ -425,15 +463,15 @@ func (sm *StreamManager) ServeJPEG(w http.ResponseWriter, r *http.Request) {
 	sm.mu.RLock()
 	defer sm.mu.RUnlock()
 
-	if len(sm.frameJPG) == 0 {
+	if len(sm.latestFrame) == 0 {
 		http.Error(w, "No frame available", http.StatusNoContent)
 		return
 	}
 
 	w.Header().Set("Content-Type", "image/jpeg")
 	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Content-Length", fmt.Sprintf("%d", len(sm.frameJPG)))
-	w.Write(sm.frameJPG)
+	w.Header().Set("Content-Length", fmt.Sprintf("%d", len(sm.latestFrame)))
+	w.Write(sm.latestFrame)
 }
 
 // GetLatestFrame returns the latest JPEG frame
@@ -441,11 +479,11 @@ func (sm *StreamManager) GetLatestFrame() []byte {
 	sm.mu.RLock()
 	defer sm.mu.RUnlock()
 
-	if len(sm.frameJPG) == 0 {
+	if len(sm.latestFrame) == 0 {
 		return nil
 	}
 
-	frame := make([]byte, len(sm.frameJPG))
-	copy(frame, sm.frameJPG)
+	frame := make([]byte, len(sm.latestFrame))
+	copy(frame, sm.latestFrame)
 	return frame
 }

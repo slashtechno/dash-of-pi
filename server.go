@@ -90,7 +90,7 @@ func (s *APIServer) checkExistingExport() {
 		s.logger.Printf("Cleaned up %d temporary export director%s", cleaned, map[bool]string{true: "y", false: "ies"}[cleaned == 1])
 	}
 
-	exportPath := filepath.Join(s.config.VideoDir, ".export", "current_export.mp4")
+	exportPath := filepath.Join(s.config.VideoDir, ".export", ExportFilename)
 	infoPath := filepath.Join(s.config.VideoDir, ".export", "export_info.json")
 
 	if info, err := os.Stat(exportPath); err == nil {
@@ -365,6 +365,8 @@ func (s *APIServer) handleLatestVideo(w http.ResponseWriter, r *http.Request) {
 	contentType := "video/mp4"
 	if HasExtension(videoPath, ExtensionWebM) {
 		contentType = "video/webm"
+	} else if strings.HasSuffix(strings.ToLower(videoPath), ".mjpeg") {
+		contentType = "video/x-motion-jpeg"
 	}
 
 	w.Header().Set("Content-Type", contentType)
@@ -396,7 +398,15 @@ func (s *APIServer) handleServeSegment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "video/mp4")
+	// Determine content type based on file extension
+	contentType := "video/mp4"
+	if strings.HasSuffix(strings.ToLower(filename), ".mjpeg") {
+		contentType = "video/x-motion-jpeg"
+	} else if HasExtension(videoPath, ExtensionWebM) {
+		contentType = "video/webm"
+	}
+
+	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("Accept-Ranges", "bytes")
 	http.ServeFile(w, r, videoPath)
 }
@@ -422,12 +432,24 @@ func (s *APIServer) handleGetConfig(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleStreamFrame serves the latest JPEG frame from the live stream
+// Falls back to cached frame if extraction fails
 func (s *APIServer) handleStreamFrame(w http.ResponseWriter, r *http.Request) {
-	// Get latest frame from stream manager
-	frameData := s.streamMgr.GetLatestFrame()
+	// Try to extract frame on-demand from the latest video segment
+	frameData := s.camera.ExtractFrameFromLatestSegment(s.config.VideoDir)
+	
+	// If extraction fails, try fallback options
 	if len(frameData) == 0 {
-		http.Error(w, "No frame available", http.StatusServiceUnavailable)
-		return
+		// Fallback 1: Try cached frame from stream manager
+		cachedFrame := s.streamMgr.GetLatestFrame()
+		if len(cachedFrame) > 0 {
+			s.logger.Debugf("Using cached frame (extraction failed)")
+			frameData = cachedFrame
+		} else {
+			// Fallback 2: No frames available yet - recording may be initializing
+			s.logger.Printf("[WARN] /api/stream/frame: No video segments available and no cached frame - returning 503")
+			http.Error(w, "Recording is initializing - no frames available yet. Please try again in a few seconds.", http.StatusServiceUnavailable)
+			return
+		}
 	}
 
 	w.Header().Set("Content-Type", "image/jpeg")
@@ -622,7 +644,7 @@ func (s *APIServer) generateExportAsync(startTime, endTime time.Time) {
 			}
 			s.exportMutex.Unlock()
 			// Clean up any partial export
-			exportPath := filepath.Join(s.config.VideoDir, ".export", "current_export.mp4")
+			exportPath := filepath.Join(s.config.VideoDir, ".export", ExportFilename)
 			infoPath := filepath.Join(s.config.VideoDir, ".export", "export_info.json")
 			os.Remove(exportPath)
 			os.Remove(infoPath)
@@ -775,13 +797,13 @@ func (s *APIServer) generateExportAsync(startTime, endTime time.Time) {
 	}
 
 	// Delete old export if exists
-	oldExportPath := filepath.Join(exportDir, "current_export.mp4")
+	oldExportPath := filepath.Join(exportDir, ExportFilename)
 	os.Remove(oldExportPath)
 	os.Remove(filepath.Join(exportDir, "export_info.json"))
 	s.logger.Printf("Removed old export if it existed")
 
 	// Generate MP4
-	outputFile := filepath.Join(exportDir, "current_export.mp4")
+	outputFile := filepath.Join(exportDir, ExportFilename)
 
 	s.logger.Printf("Generating video from %d MJPEG segments at %dx%d@%dfps",
 		len(tempFiles), s.config.VideoResWidth, s.config.VideoResHeight, s.config.VideoFPS)
@@ -900,7 +922,7 @@ encodingDone:
 
 	// Save export info
 	exportInfo := ExportInfo{
-		Filename:      "current_export.mp4",
+		Filename:      ExportFilename,
 		StartTime:     startTime,
 		EndTime:       endTime,
 		Size:          info.Size(),
@@ -941,7 +963,7 @@ func (s *APIServer) handleDownloadExport(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	exportPath := filepath.Join(s.config.VideoDir, ".export", "current_export.mp4")
+	exportPath := filepath.Join(s.config.VideoDir, ".export", ExportFilename)
 	info, err := os.Stat(exportPath)
 	if err != nil {
 		http.Error(w, "Export file not found", http.StatusNotFound)
@@ -971,7 +993,7 @@ func (s *APIServer) handleDeleteExport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	exportPath := filepath.Join(s.config.VideoDir, ".export", "current_export.mp4")
+	exportPath := filepath.Join(s.config.VideoDir, ".export", ExportFilename)
 	infoPath := filepath.Join(s.config.VideoDir, ".export", "export_info.json")
 
 	os.Remove(exportPath)

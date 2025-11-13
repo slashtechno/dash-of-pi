@@ -177,21 +177,11 @@ async function checkExportStatus() {
 				progressSection.style.display = 'none';
 				exportSection.style.display = 'block';
 				
-				const startDate = new Date(data.start_time).toLocaleString('en-US', { 
-					timeZone: 'UTC', 
-					dateStyle: 'short',
-					timeStyle: 'short',
-					timeZoneName: 'short'
-				});
-				const endDate = new Date(data.end_time).toLocaleString('en-US', { 
-					timeZone: 'UTC',
-					dateStyle: 'short', 
-					timeStyle: 'short',
-					timeZoneName: 'short'
-				});
+				const startDate = new Date(data.start_time).toISOString().replace('T', ' ').slice(0, 16);
+				const endDate = new Date(data.end_time).toISOString().replace('T', ' ').slice(0, 16);
 				const size = (data.size / (1024 * 1024)).toFixed(2);
 				document.getElementById('exportInfo').textContent = 
-					`${startDate} to ${endDate} • ${size} MB`;
+					`${startDate} to ${endDate} UTC • ${size} MB`;
 			} else {
 				// Hide both sections
 				progressSection.style.display = 'none';
@@ -296,53 +286,8 @@ function downloadVideo(filename) {
 function loadStream() {
 	const container = document.getElementById('playerContainer');
 	
-	// Try MJPEG multipart streaming first (more efficient)
-	const useMJPEGStream = true;
-	
-	if (useMJPEGStream) {
-		container.innerHTML = '<img id="live-stream" class="stream-viewer" src="" alt="Live stream">';
-		const img = document.getElementById('live-stream');
-		let reconnectAttempts = 0;
-		const maxReconnectAttempts = 3;
-		
-		function connectStream() {
-			const timestamp = new Date().getTime();
-			img.src = '/api/stream/mjpeg?token=' + authToken + '&t=' + timestamp;
-			console.log('MJPEG stream connecting...');
-		}
-		
-		// Auto-reconnect on error
-		img.onerror = function() {
-			reconnectAttempts++;
-			console.log('MJPEG stream error (attempt ' + reconnectAttempts + '/' + maxReconnectAttempts + ')');
-			
-			if (reconnectAttempts < maxReconnectAttempts) {
-				setTimeout(connectStream, 2000);
-			} else {
-				console.log('MJPEG streaming failed after ' + maxReconnectAttempts + ' attempts, falling back to polling');
-				loadStreamPolling();
-			}
-		};
-		
-		// Monitor for stream stalls
-		let lastImageUpdate = Date.now();
-		img.onload = function() {
-			lastImageUpdate = Date.now();
-			reconnectAttempts = 0;
-		};
-		
-		setInterval(function() {
-			const timeSinceUpdate = Date.now() - lastImageUpdate;
-			if (timeSinceUpdate > 10000 && reconnectAttempts < maxReconnectAttempts) {
-				console.log('Stream appears stalled, reconnecting...');
-				connectStream();
-			}
-		}, 10000);
-		
-		connectStream();
-	} else {
-		loadStreamPolling();
-	}
+	// Use polling for better browser compatibility
+	loadStreamPolling();
 }
 
 function loadStreamPolling() {
