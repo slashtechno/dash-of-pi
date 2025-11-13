@@ -1,8 +1,23 @@
 {
-  "home_wifi": {
-    "ssid": "YourHomeSSID",
-    "psk": "YourHomePassword"
-  },
+  "networks": [
+    {
+      "ssid": "YourHomeSSID",
+      "type": "wpa_psk",
+      "psk": "YourHomePassword"
+    },
+    {
+      "ssid": "YourWorkSSID",
+      "type": "wpa_psk",
+      "psk": "YourWorkPassword"
+    },
+    {
+      "ssid": "UniversityWiFi",
+      "type": "wpa_eap",
+      "identity": "your-username",
+      "password": "your-password",
+      "ca_cert_validation": "disabled"
+    }
+  ],
   "hotspot": {
     "ssid": "PiHotspot",
     "psk": "HotspotPassword"

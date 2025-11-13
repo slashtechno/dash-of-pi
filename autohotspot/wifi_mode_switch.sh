@@ -19,15 +19,21 @@ if [ ! -f "$CONFIG" ]; then
   exit 1
 fi
 
-HOME_SSID=$(jq -r '.home_wifi.ssid' "$CONFIG" 2>/dev/null) || true
-HOME_PSK=$(jq -r '.home_wifi.psk' "$CONFIG" 2>/dev/null) || true
+# Read hotspot config
 HS_SSID=$(jq -r '.hotspot.ssid' "$CONFIG" 2>/dev/null) || true
 HS_PSK=$(jq -r '.hotspot.psk' "$CONFIG" 2>/dev/null) || true
 
-# Validate config was loaded
-if [ -z "$HOME_SSID" ] || [ -z "$HOME_PSK" ] || [ -z "$HS_SSID" ] || [ -z "$HS_PSK" ]; then
-  echo "$(date '+%Y-%m-%d %H:%M:%S'): ERROR: Failed to read config values from $CONFIG" >> "$LOG_FILE"
-  echo "HOME_SSID=$HOME_SSID HOME_PSK=$HOME_PSK HS_SSID=$HS_SSID HS_PSK=$HS_PSK" >> "$LOG_FILE"
+# Validate hotspot config was loaded
+if [ -z "$HS_SSID" ] || [ -z "$HS_PSK" ]; then
+  echo "$(date '+%Y-%m-%d %H:%M:%S'): ERROR: Failed to read hotspot config from $CONFIG" >> "$LOG_FILE"
+  exit 1
+fi
+
+# Get number of configured networks
+NETWORK_COUNT=$(jq -r '.networks | length' "$CONFIG" 2>/dev/null) || NETWORK_COUNT=0
+
+if [ "$NETWORK_COUNT" -eq 0 ]; then
+  echo "$(date '+%Y-%m-%d %H:%M:%S'): ERROR: No networks configured in $CONFIG" >> "$LOG_FILE"
   exit 1
 fi
 
@@ -40,9 +46,50 @@ log_message() {
   echo "$(date '+%Y-%m-%d %H:%M:%S'): $1" >> "$LOG_FILE"
 }
 
-# Function to switch to client mode
+# Function to generate wpa_supplicant network config for a network
+generate_network_config() {
+  local index=$1
+  local ssid=$(jq -r ".networks[$index].ssid" "$CONFIG")
+  local type=$(jq -r ".networks[$index].type" "$CONFIG")
+  # Priority based on array order: first network = highest priority
+  local priority=$((100 - index * 10))
+  
+  echo "network={"
+  echo "    ssid=\"$ssid\""
+  echo "    priority=$priority"
+  
+  if [ "$type" = "wpa_psk" ]; then
+    local psk=$(jq -r ".networks[$index].psk" "$CONFIG")
+    echo "    psk=\"$psk\""
+    echo "    key_mgmt=WPA-PSK"
+    
+  elif [ "$type" = "wpa_eap" ]; then
+    local identity=$(jq -r ".networks[$index].identity" "$CONFIG")
+    local password=$(jq -r ".networks[$index].password" "$CONFIG")
+    local ca_cert_validation=$(jq -r ".networks[$index].ca_cert_validation // \"enabled\"" "$CONFIG")
+    
+    echo "    key_mgmt=WPA-EAP"
+    echo "    eap=PEAP"
+    echo "    identity=\"$identity\""
+    echo "    password=\"$password\""
+    echo "    phase2=\"auth=MSCHAPV2\""
+    
+    # Disable certificate validation if specified (common for institutional WiFi)
+    if [ "$ca_cert_validation" = "disabled" ]; then
+      echo "    # Certificate validation disabled - accept any certificate"
+      echo "    ca_cert=\"/etc/ssl/certs/ca-certificates.crt\""
+      echo "    phase1=\"peaplabel=0\""
+      echo "    # Don't validate server certificate"
+      echo "    # This is equivalent to accepting the certificate on iOS"
+    fi
+  fi
+  
+  echo "}"
+}
+
+# Function to switch to client mode - tries all configured networks
 switch_to_client() {
-  log_message "Home SSID found, switching to client mode"
+  log_message "Switching to client mode - will try all configured networks in priority order"
   
   # Stop hotspot services
   systemctl stop hostapd 2>/dev/null || true
@@ -55,19 +102,21 @@ switch_to_client() {
   pkill -f "wpa_supplicant" || true
   sleep 2
   
-  # Create wpa_supplicant configuration
+  # Create wpa_supplicant configuration with ALL networks
   cat > "$WPA_CONF" <<EOF
 ctrl_interface=DIR=/var/run/wpa_supplicant GROUP=netdev
 update_config=1
 country=US
 
-network={
-    ssid="$HOME_SSID"
-    psk="$HOME_PSK"
-    key_mgmt=WPA-PSK
-    priority=10
-}
 EOF
+  
+  # Add all configured networks to wpa_supplicant config
+  for ((i=0; i<NETWORK_COUNT; i++)); do
+    generate_network_config $i >> "$WPA_CONF"
+    echo "" >> "$WPA_CONF"
+  done
+  
+  log_message "Generated wpa_supplicant config with $NETWORK_COUNT networks"
   
   # Start wpa_supplicant with the dedicated config
   wpa_supplicant -B -i "$DEVICE" -c "$WPA_CONF" -D nl80211,wext
@@ -78,12 +127,12 @@ EOF
   sleep 1
   dhclient "$DEVICE" 2>/dev/null || true
   
-  log_message "Client mode activated"
+  log_message "Client mode activated - wpa_supplicant will auto-select best available network"
 }
 
 # Function to switch to hotspot mode
 switch_to_hotspot() {
-  log_message "Home SSID not found, switching to hotspot mode"
+  log_message "No configured networks available, switching to hotspot mode"
   
   # Kill all wpa_supplicant processes
   pkill -f "wpa_supplicant" || true
@@ -144,16 +193,27 @@ check_connectivity() {
   fi
 }
 
-# Function to check if home network is available
-home_network_available() {
-  iw dev "$DEVICE" scan ap-force 2>/dev/null | grep -q "SSID: $HOME_SSID"
+# Function to check if any configured network is available
+any_network_available() {
+  local scan_results=$(iw dev "$DEVICE" scan ap-force 2>/dev/null)
+  
+  # Check each configured network
+  for ((i=0; i<NETWORK_COUNT; i++)); do
+    local ssid=$(jq -r ".networks[$i].ssid" "$CONFIG")
+    if echo "$scan_results" | grep -q "SSID: $ssid"; then
+      log_message "Found available network: $ssid"
+      return 0
+    fi
+  done
+  
+  return 1
 }
 
 # Main mode switching logic
 perform_mode_switch() {
   log_message "Performing mode detection..."
   
-  if home_network_available; then
+  if any_network_available; then
     if [ "$CURRENT_MODE" != "client" ]; then
       switch_to_client
       CURRENT_MODE="client"
@@ -169,7 +229,14 @@ perform_mode_switch() {
 # Monitoring loop
 monitor_connection() {
   log_message "Starting continuous connection monitoring (checking every ${CHECK_INTERVAL}s)"
-  log_message "HOME_SSID=$HOME_SSID, HOTSPOT_SSID=$HS_SSID"
+  log_message "Configured networks: $NETWORK_COUNT, HOTSPOT_SSID=$HS_SSID"
+  
+  # Log all configured networks (in priority order)
+  for ((i=0; i<NETWORK_COUNT; i++)); do
+    local ssid=$(jq -r ".networks[$i].ssid" "$CONFIG")
+    local type=$(jq -r ".networks[$i].type" "$CONFIG")
+    log_message "  Network $((i+1)): $ssid (type=$type)"
+  done
   
   local failed_checks=0
   
@@ -190,24 +257,24 @@ monitor_connection() {
         
         if [ $failed_checks -ge $FAILED_CHECKS_THRESHOLD ]; then
           log_message "Client mode: Connection lost after $failed_checks failed checks"
-          # Check if home network is still visible
-          if ! home_network_available; then
-            log_message "Home network no longer visible, switching to hotspot"
+          # Check if any configured network is still visible
+          if ! any_network_available; then
+            log_message "No configured networks visible, switching to hotspot"
             switch_to_hotspot
             CURRENT_MODE="hotspot"
             failed_checks=0
           else
-            log_message "Home network still visible, attempting to reconnect"
+            log_message "Networks still visible, attempting to reconnect"
             switch_to_client
             failed_checks=0
           fi
         fi
       fi
     else
-      # In hotspot mode - periodically check if home network becomes available
-      log_message "Hotspot mode: Checking for home network"
-      if home_network_available; then
-        log_message "Home network detected, switching to client mode"
+      # In hotspot mode - periodically check if any configured network becomes available
+      log_message "Hotspot mode: Checking for configured networks"
+      if any_network_available; then
+        log_message "Configured network detected, switching to client mode"
         switch_to_client
         CURRENT_MODE="client"
         failed_checks=0
@@ -218,5 +285,5 @@ monitor_connection() {
 
 # Main logic - always run in monitoring mode
 log_message "Starting WiFi mode detection..."
-log_message "HOME_SSID=$HOME_SSID, HOTSPOT_SSID=$HS_SSID"
+log_message "Loaded $NETWORK_COUNT network(s) and hotspot config from $CONFIG"
 monitor_connection
