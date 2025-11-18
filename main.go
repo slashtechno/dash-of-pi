@@ -1,6 +1,7 @@
 package main
 
 import (
+	"dash-of-pi/camera"
 	"flag"
 	"fmt"
 	"log"
@@ -59,19 +60,37 @@ func main() {
 		logger.Fatalf("Failed to initialize storage manager: %v", err)
 	}
 
-	// Create camera
-	camera, err := NewCamera(config, logger)
+	// Convert config cameras to camera.CameraConfig
+	cameraConfigs := make([]camera.CameraConfig, len(config.Cameras))
+	for i, cam := range config.Cameras {
+		cameraConfigs[i] = camera.CameraConfig{
+			ID:             cam.ID,
+			Name:           cam.Name,
+			Device:         cam.Device,
+			Rotation:       cam.Rotation,
+			ResWidth:       cam.ResWidth,
+			ResHeight:      cam.ResHeight,
+			Bitrate:        cam.Bitrate,
+			FPS:            cam.FPS,
+			MJPEGQuality:   cam.MJPEGQuality,
+			EmbedTimestamp: cam.EmbedTimestamp,
+			Enabled:        cam.Enabled,
+		}
+	}
+
+	// Create camera manager
+	cameraManager, err := camera.NewCameraManager(cameraConfigs, config.SegmentLengthS, config.VideoDir, logger)
 	if err != nil {
-		logger.Fatalf("Failed to initialize camera: %v", err)
+		logger.Fatalf("Failed to initialize camera manager: %v", err)
 	}
 
 	// Create API server
-	server := NewAPIServer(config, camera, sm, logger)
+	server := NewAPIServer(config, cameraManager, sm, logger, *configPath)
 
 	// Start recording in background
 	recordingDone := make(chan error, 1)
 	go func() {
-		recordingDone <- camera.Start(config.VideoDir)
+		recordingDone <- cameraManager.Start()
 	}()
 
 	// Start HTTP server in background
@@ -95,6 +114,6 @@ func main() {
 
 	// Cleanup
 	logger.Printf("Shutting down...")
-	camera.Stop()
+	cameraManager.Stop()
 	server.Stop()
 }

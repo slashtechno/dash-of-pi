@@ -21,13 +21,16 @@ go run .
 
 ## Features
 
+- **Multi-camera support** - Record from multiple cameras simultaneously
+- **Per-camera configuration** - Independent settings for resolution, rotation, bitrate, quality
 - Records continuous video in segments with rolling storage
 - Web dashboard for live streaming and downloading videos
-- Timestamps embedded on video (optional)
+- Timestamps embedded on video (optional, per-camera)
 - On-demand video export with persistent storage
 - Authentication
 - Docker and Systemd options
 - All times in UTC (noted in footer)
+- Organized video storage by camera (videos/front/, videos/rear/, etc.)
 
 ## Recording Format & On-Demand Conversion
 
@@ -64,33 +67,77 @@ GET /api/auth/token      # Auth token
 
 ## Configuration
 
-Config stored at `~/.config/dash-of-pi/config.json`:
+Config stored at `~/.config/dash-of-pi/config.json`. See `config.json.example` for a complete multi-camera example.
+
+### Multi-Camera Configuration
+
 ```json
 {
   "port": 8080,
-  "storage_cap_gb": 10,
-  "video_bitrate": 1024,
-  "video_fps": 24,
-  "video_res_width": 1280,
-  "video_res_height": 720,
+  "storage_cap_gb": 20,
   "segment_length_s": 60,
-  "camera_device": "/dev/video0",
-  "mjpeg_quality": 8,
-  "embed_timestamp": false
+  "cameras": [
+    {
+      "id": "front",
+      "name": "Front Camera",
+      "device": "/dev/video0",
+      "rotation": 0,
+      "res_width": 1920,
+      "res_height": 1080,
+      "bitrate": 2048,
+      "fps": 30,
+      "mjpeg_quality": 5,
+      "embed_timestamp": true,
+      "enabled": true
+    },
+    {
+      "id": "rear",
+      "name": "Rear Camera",
+      "device": "/dev/video1",
+      "rotation": 180,
+      "res_width": 1280,
+      "res_height": 720,
+      "bitrate": 1024,
+      "fps": 24,
+      "mjpeg_quality": 8,
+      "embed_timestamp": true,
+      "enabled": true
+    }
+  ]
 }
 ```
 
-Key settings:
-- `camera_device`: Video input device (e.g., `/dev/video0`, `/dev/video1`)
+### Configuration Options
+
+**Global Settings:**
+- `port`: HTTP server port (default: 8080)
 - `storage_cap_gb`: Max disk usage before deleting oldest videos
 - `segment_length_s`: Recording segment duration in seconds
-- `mjpeg_quality`: MJPEG recording quality (2-31, default 8; lower = higher quality, higher storage)
-  - Recommended: 8 (balanced), 3-4 (high quality), 10+ (low quality for long-term storage)
-- `video_fps`: Recording framerate (default 24, can be increased to 30)
-- `video_bitrate`: Not used for MP4 export (uses quality setting instead)
-- `embed_timestamp`: Overlay timestamp on video (format: YYYY-MM-DD HH:MM:SS (UTC), positioned at top-left)
 
-Restart service to apply changes.
+**Per-Camera Settings:**
+- `id`: Unique camera identifier (used in URLs and directory structure)
+- `name`: User-friendly camera name
+- `device`: Video input device (e.g., `/dev/video0`, `/dev/video1`)
+- `rotation`: Camera rotation in degrees (0, 90, 180, 270)
+- `res_width` / `res_height`: Video resolution
+- `bitrate`: Video bitrate in kbps
+- `fps`: Recording framerate
+- `mjpeg_quality`: MJPEG quality (2-31, lower = better quality)
+  - Recommended: 5-8 (balanced), 2-4 (high quality), 10+ (low quality/storage)
+- `embed_timestamp`: Overlay timestamp (format: YYYY-MM-DD HH:MM:SS UTC)
+- `enabled`: Whether this camera is active
+
+### Legacy Configuration
+
+Old single-camera configs are automatically migrated to the new format on startup.
+
+### Accessing Camera Streams
+
+- Live frame: `/api/stream/frame?camera=front`
+- MJPEG stream: `/api/stream/mjpeg?camera=rear`
+- If no camera parameter is provided, the first camera is used
+
+Restart service to apply config changes.
 
 ## Dashboard
 

@@ -50,6 +50,14 @@
 		</div>
 
 		<div class="section">
+			<div class="section-title">Cameras</div>
+			<div id="camerasList" class="cameras-list">
+				<div class="loading">Loading cameras...</div>
+			</div>
+			<button onclick="openAddCameraModal()" style="margin-top: 15px; width: 100%;">➕ Add New Camera</button>
+		</div>
+
+		<div class="section">
 			<div class="section-title">Generate Video</div>
 			<div class="filter-controls">
 				<button id="lifetimeBtn" onclick="generateVideo('lifetime')" style="margin-right: 10px;">📹 Lifetime</button>
@@ -117,6 +125,72 @@
 			<input type="password" id="authInput" placeholder="Enter token" onkeypress="if(event.key==='Enter')authenticate()">
 			<button onclick="authenticate()">Login</button>
 			<div id="authError" style="color: #ef4444; margin-top: 10px; display: none;"></div>
+		</div>
+	</div>
+
+	<!-- Add/Edit Camera Modal -->
+	<div class="modal" id="cameraModal">
+		<div class="modal-content">
+			<div class="modal-header">
+				<h2 id="cameraModalTitle">Add New Camera</h2>
+				<button class="modal-close" onclick="closeCameraModal()">×</button>
+			</div>
+			<div class="modal-body">
+				<div class="form-group">
+					<label>Camera ID</label>
+					<input type="text" id="cameraId" placeholder="e.g., front, rear, left" disabled>
+					<small>Generated automatically for new cameras</small>
+				</div>
+				<div class="form-group">
+					<label>Camera Name *</label>
+					<input type="text" id="cameraName" placeholder="e.g., Front Camera, Rear Camera">
+				</div>
+				<div class="form-group">
+					<label>Device Path *</label>
+					<input type="text" id="cameraDevice" placeholder="/dev/video0">
+				</div>
+				<div class="form-group">
+					<label>Rotation</label>
+					<select id="cameraRotation">
+						<option value="0">0° (No rotation)</option>
+						<option value="90">90° (Clockwise)</option>
+						<option value="180">180° (Upside down)</option>
+						<option value="270">270° (Counter-clockwise)</option>
+					</select>
+				</div>
+				<div class="form-group">
+					<label>Width (pixels)</label>
+					<input type="number" id="cameraResWidth" value="1920">
+				</div>
+				<div class="form-group">
+					<label>Height (pixels)</label>
+					<input type="number" id="cameraResHeight" value="1080">
+				</div>
+				<div class="form-group">
+					<label>Bitrate (kbps)</label>
+					<input type="number" id="cameraBitrate" value="2048">
+				</div>
+				<div class="form-group">
+					<label>FPS</label>
+					<input type="number" id="cameraFPS" value="30">
+				</div>
+				<div class="form-group">
+					<label>MJPEG Quality (2-31, lower = better)</label>
+					<input type="number" id="cameraMJPEGQuality" value="5" min="2" max="31">
+				</div>
+				<div class="form-group checkbox">
+					<input type="checkbox" id="cameraEmbedTimestamp" checked>
+					<label for="cameraEmbedTimestamp">Embed timestamp on video</label>
+				</div>
+				<div class="form-group checkbox">
+					<input type="checkbox" id="cameraEnabled" checked>
+					<label for="cameraEnabled">Enable camera</label>
+				</div>
+			</div>
+			<div class="modal-footer">
+				<button onclick="closeCameraModal()" class="btn-secondary">Cancel</button>
+				<button onclick="saveCameraConfig()" class="btn-primary">Save Camera</button>
+			</div>
 		</div>
 	</div>
 

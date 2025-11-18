@@ -1,0 +1,35 @@
+{
+  "port": 8080,
+  "video_dir": "/home/user/.local/state/dash-of-pi",
+  "storage_cap_gb": 20,
+  "auth_token": "your-secure-token-here",
+  "segment_length_s": 60,
+  "cameras": [
+    {
+      "id": "front",
+      "name": "Front Camera",
+      "device": "/dev/video0",
+      "rotation": 0,
+      "res_width": 1920,
+      "res_height": 1080,
+      "bitrate": 2048,
+      "fps": 30,
+      "mjpeg_quality": 5,
+      "embed_timestamp": true,
+      "enabled": true
+    },
+    {
+      "id": "rear",
+      "name": "Rear Camera",
+      "device": "/dev/video1",
+      "rotation": 180,
+      "res_width": 1280,
+      "res_height": 720,
+      "bitrate": 1024,
+      "fps": 24,
+      "mjpeg_quality": 8,
+      "embed_timestamp": true,
+      "enabled": true
+    }
+  ]
+}

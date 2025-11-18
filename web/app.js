@@ -1,5 +1,6 @@
 let authToken = localStorage.getItem('authToken');
 let startTime = Date.now();
+let editingCameraId = null;
 
 function showError(msg) {
 	const errorBox = document.getElementById('errorBox');
@@ -48,8 +49,10 @@ function authenticate() {
 			document.getElementById('authError').style.display = 'none';
 			loadStatus();
 			loadStream();
+			loadCameras();
 			checkExportStatus();
 			setInterval(loadStatus, 5000);
+			setInterval(loadCameras, 30000);
 			// Check export status more frequently (every 3 seconds to catch progress updates)
 			setInterval(checkExportStatus, 3000);
 		} else {
@@ -283,6 +286,168 @@ function downloadVideo(filename) {
 	a.click();
 }
 
+async function loadCameras() {
+	try {
+		console.log('Loading cameras...');
+		const data = await apiCall('/api/cameras');
+		console.log('Cameras loaded:', data);
+		const container = document.getElementById('camerasList');
+		
+		if (!data.cameras || data.cameras.length === 0) {
+			container.innerHTML = '<div class="empty-state">No cameras configured</div>';
+			return;
+		}
+		
+		container.innerHTML = data.cameras.map(camera => {
+			const rotationLabel = {
+				0: '0°',
+				90: '90°',
+				180: '180°',
+				270: '270°'
+			}[camera.rotation] || camera.rotation + '°';
+			
+			return '<div class="camera-card">' +
+				'<div class="camera-header">' +
+				'<div class="camera-info">' +
+				'<div class="camera-name">' + camera.name + '</div>' +
+				'<div class="camera-meta">' +
+				'ID: ' + camera.id + ' • ' + camera.res_width + 'x' + camera.res_height + ' • ' +
+				'Rotation: ' + rotationLabel +
+				'</div>' +
+				'<div class="camera-device">' + camera.device + '</div>' +
+				'</div>' +
+				'<div class="camera-status" style="' + (camera.enabled ? 'background: #4ade80' : 'background: #666') + '">' +
+				(camera.enabled ? '✓ Active' : '○ Disabled') +
+				'</div>' +
+				'</div>' +
+				'<div class="camera-actions">' +
+				'<button onclick="editCamera(\'' + camera.id + '\')">Edit</button>' +
+				'<button onclick="deleteCamera(\'' + camera.id + '\')" style="background: #dc2626;">Delete</button>' +
+				'</div>' +
+				'</div>';
+		}).join('');
+	} catch (err) {
+		console.error('Failed to load cameras:', err);
+		const container = document.getElementById('camerasList');
+		container.innerHTML = '<div class="empty-state">Failed to load cameras</div>';
+	}
+}
+
+function openAddCameraModal() {
+	editingCameraId = null;
+	document.getElementById('cameraModalTitle').textContent = 'Add New Camera';
+	document.getElementById('cameraId').value = '';
+	document.getElementById('cameraId').disabled = true;
+	document.getElementById('cameraName').value = '';
+	document.getElementById('cameraDevice').value = '';
+	document.getElementById('cameraRotation').value = '0';
+	document.getElementById('cameraResWidth').value = '1920';
+	document.getElementById('cameraResHeight').value = '1080';
+	document.getElementById('cameraBitrate').value = '2048';
+	document.getElementById('cameraFPS').value = '30';
+	document.getElementById('cameraMJPEGQuality').value = '5';
+	document.getElementById('cameraEmbedTimestamp').checked = true;
+	document.getElementById('cameraEnabled').checked = true;
+	document.getElementById('cameraModal').classList.add('active');
+}
+
+async function editCamera(cameraId) {
+	try {
+		const data = await apiCall('/api/cameras');
+		const camera = data.cameras.find(c => c.id === cameraId);
+		
+		if (!camera) {
+			showError('Camera not found');
+			return;
+		}
+		
+		editingCameraId = cameraId;
+		document.getElementById('cameraModalTitle').textContent = 'Edit Camera';
+		document.getElementById('cameraId').value = camera.id;
+		document.getElementById('cameraId').disabled = true;
+		document.getElementById('cameraName').value = camera.name;
+		document.getElementById('cameraDevice').value = camera.device;
+		document.getElementById('cameraRotation').value = camera.rotation;
+		document.getElementById('cameraResWidth').value = camera.res_width;
+		document.getElementById('cameraResHeight').value = camera.res_height;
+		document.getElementById('cameraBitrate').value = camera.bitrate;
+		document.getElementById('cameraFPS').value = camera.fps;
+		document.getElementById('cameraMJPEGQuality').value = camera.mjpeg_quality;
+		document.getElementById('cameraEmbedTimestamp').checked = camera.embed_timestamp;
+		document.getElementById('cameraEnabled').checked = camera.enabled;
+		document.getElementById('cameraModal').classList.add('active');
+	} catch (err) {
+		console.error('Failed to edit camera:', err);
+		showError('Failed to load camera details');
+	}
+}
+
+function closeCameraModal() {
+	document.getElementById('cameraModal').classList.remove('active');
+}
+
+async function saveCameraConfig() {
+	const name = document.getElementById('cameraName').value;
+	const device = document.getElementById('cameraDevice').value;
+	
+	if (!name || !device) {
+		showError('Please fill in required fields (Name, Device)');
+		return;
+	}
+	
+	const cameraData = {
+		name: name,
+		device: device,
+		rotation: parseInt(document.getElementById('cameraRotation').value),
+		res_width: parseInt(document.getElementById('cameraResWidth').value),
+		res_height: parseInt(document.getElementById('cameraResHeight').value),
+		bitrate: parseInt(document.getElementById('cameraBitrate').value),
+		fps: parseInt(document.getElementById('cameraFPS').value),
+		mjpeg_quality: parseInt(document.getElementById('cameraMJPEGQuality').value),
+		embed_timestamp: document.getElementById('cameraEmbedTimestamp').checked,
+		enabled: document.getElementById('cameraEnabled').checked
+	};
+	
+	try {
+		let url = '/api/cameras/add';
+		let method = 'POST';
+		
+		if (editingCameraId) {
+			url = '/api/cameras/update?id=' + encodeURIComponent(editingCameraId);
+			method = 'PUT';
+		}
+		
+		const response = await apiCall(url, {
+			method: method,
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify(cameraData)
+		});
+		
+		showError('✓ Camera ' + (editingCameraId ? 'updated' : 'added') + '. Changes applied.');
+		closeCameraModal();
+		setTimeout(loadCameras, 1000);
+	} catch (err) {
+		showError('Failed to save camera: ' + err.message);
+	}
+}
+
+async function deleteCamera(cameraId) {
+	if (!confirm('Are you sure you want to delete this camera? Restart required for changes.')) {
+		return;
+	}
+	
+	try {
+		await apiCall('/api/cameras/delete?id=' + encodeURIComponent(cameraId), {
+			method: 'DELETE'
+		});
+		
+		showError('✓ Camera deleted. Changes applied.');
+		loadCameras();
+	} catch (err) {
+		showError('Failed to delete camera: ' + err.message);
+	}
+}
+
 function loadStream() {
 	const container = document.getElementById('playerContainer');
 	
@@ -322,8 +487,10 @@ if (!authToken) {
 } else {
 	loadStatus();
 	loadStream();
+	loadCameras();
 	checkExportStatus();
 	setInterval(loadStatus, 5000);
+	setInterval(loadCameras, 30000);
 	// Check export status more frequently (every 3 seconds to catch progress updates)
 	setInterval(checkExportStatus, 3000);
 }
