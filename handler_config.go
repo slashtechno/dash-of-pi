@@ -13,6 +13,7 @@ func convertCameraConfigs(configs []CameraConfig) []camera.CameraConfig {
 			ID:             c.ID,
 			Name:           c.Name,
 			Device:         c.Device,
+			PixelFormat:    c.PixelFormat,
 			Rotation:       c.Rotation,
 			ResWidth:       c.ResWidth,
 			ResHeight:      c.ResHeight,

@@ -25,10 +25,18 @@ func (c *Camera) recordAndStreamSegment(filename string) error {
 	}
 
 	if inputFormat == "video4linux2" || inputFormat == "v4l2" {
-		args = append(args,
-			"-input_format", "mjpeg",
-			"-video_size", fmt.Sprintf("%dx%d", c.camConfig.ResWidth, c.camConfig.ResHeight),
-		)
+		pixelFormat := strings.TrimSpace(c.camConfig.PixelFormat)
+		if pixelFormat == "" {
+			pixelFormat = "auto"
+		}
+
+		if !strings.EqualFold(pixelFormat, "auto") {
+			args = append(args, "-input_format", strings.ToLower(pixelFormat))
+		}
+
+		if c.camConfig.ResWidth > 0 && c.camConfig.ResHeight > 0 {
+			args = append(args, "-video_size", fmt.Sprintf("%dx%d", c.camConfig.ResWidth, c.camConfig.ResHeight))
+		}
 	}
 
 	args = append(args,
@@ -40,7 +48,7 @@ func (c *Camera) recordAndStreamSegment(filename string) error {
 
 	// Build video filters
 	var videoFilters []string
-	
+
 	// Apply rotation if specified
 	if c.camConfig.Rotation != 0 {
 		switch c.camConfig.Rotation {
@@ -52,7 +60,7 @@ func (c *Camera) recordAndStreamSegment(filename string) error {
 			videoFilters = append(videoFilters, "transpose=2")
 		}
 	}
-	
+
 	if inputFormat != "video4linux2" && inputFormat != "v4l2" {
 		videoFilters = append(videoFilters, fmt.Sprintf("scale=%d:%d", c.camConfig.ResWidth, c.camConfig.ResHeight))
 	}

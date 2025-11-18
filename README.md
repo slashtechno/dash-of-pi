@@ -69,6 +69,8 @@ GET /api/auth/token      # Auth token
 
 Config stored at `~/.config/dash-of-pi/config.json`. See `config.json.example` for a complete multi-camera example.
 
+> Using `sudo ./scripts/install.sh`? The generated Systemd service keeps its config at `/etc/dash-of-pi/config.json` and writes recordings to `/var/lib/dash-of-pi/videos`. Adjust that file (or use the dashboard camera editor) and restart the service to apply changes.
+
 ### Multi-Camera Configuration
 
 ```json
@@ -81,6 +83,7 @@ Config stored at `~/.config/dash-of-pi/config.json`. See `config.json.example` f
       "id": "front",
       "name": "Front Camera",
       "device": "/dev/video0",
+      "pixel_format": "auto",
       "rotation": 0,
       "res_width": 1920,
       "res_height": 1080,
@@ -94,6 +97,7 @@ Config stored at `~/.config/dash-of-pi/config.json`. See `config.json.example` f
       "id": "rear",
       "name": "Rear Camera",
       "device": "/dev/video1",
+      "pixel_format": "yuv420p",
       "rotation": 180,
       "res_width": 1280,
       "res_height": 720,
@@ -118,6 +122,7 @@ Config stored at `~/.config/dash-of-pi/config.json`. See `config.json.example` f
 - `id`: Unique camera identifier (used in URLs and directory structure)
 - `name`: User-friendly camera name
 - `device`: Video input device (e.g., `/dev/video0`, `/dev/video1`)
+- `pixel_format`: Optional V4L2 pixel format hint (defaults to `auto`; set to a supported format if your camera rejects MJPEG)
 - `rotation`: Camera rotation in degrees (0, 90, 180, 270)
 - `res_width` / `res_height`: Video resolution
 - `bitrate`: Video bitrate in kbps
@@ -148,6 +153,7 @@ Restart service to apply config changes.
   - Only one export is kept at a time (replaces previous export)
   - Export can be downloaded multiple times until deleted or replaced
   - All times displayed in UTC (noted in footer)
+- **Camera Editor:** Add, remove, or edit cameras (device, pixel format, resolution, etc.) directly in the browser; changes persist to the config file and trigger a camera restart.
 
 ## Troubleshooting
 
@@ -165,6 +171,11 @@ journalctl -u dash-of-pi -f
 ls ~/.local/state/dash-of-pi/videos/
 # Should have .mjpeg files
 ```
+
+**CSI camera shows `Cannot find a proper format for codec 'mjpeg'`:**
+- Run `ffmpeg -f v4l2 -list_formats all -i /dev/video0` (or `v4l2-ctl --list-formats-ext -d /dev/video0`). Look for the `Pixel Format` column -- pick one that your device advertises (e.g., `yuv420p`, `yuyv422`, `SRGGB10_CSI2P`).
+- Set that string in the `pixel_format` field via the dashboard camera editor or config file (leave other cameras on `auto`).
+- Restart the service so FFmpeg launches with the updated input format.
 
 **Go build killed on low-RAM Pis:**
 `./scripts/install.sh` automatically creates a temporary 1 GB swap file at `/var/swap-dash-of-pi-build` whenever the system reports less than ~900 MB of RAM so the Go compiler can finish. The swap file is removed after the build completes.

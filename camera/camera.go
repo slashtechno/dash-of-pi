@@ -14,6 +14,7 @@ type CameraConfig struct {
 	ID             string `json:"id"`
 	Name           string `json:"name"`
 	Device         string `json:"device"`
+	PixelFormat    string `json:"pixel_format,omitempty"`
 	Rotation       int    `json:"rotation"`
 	ResWidth       int    `json:"res_width"`
 	ResHeight      int    `json:"res_height"`
