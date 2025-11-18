@@ -194,8 +194,10 @@ go version
 
 echo "[3/9] Creating dash-of-pi user..."
 if ! id "dash-of-pi" &>/dev/null; then
+    # Create a system user (-r flag) with home directory at /var/lib/dash-of-pi
+    # System users automatically get their home set to /var/lib/<username> by default
     useradd -r -s /bin/false dash-of-pi
-    echo "Created user: dash-of-pi"
+    echo "Created user: dash-of-pi (home: /var/lib/dash-of-pi)"
 else
     echo "User dash-of-pi already exists"
 fi
@@ -242,7 +244,9 @@ chmod 750 /etc/dash-of-pi
 
 echo "[7/9] Creating initial config..."
 if [ ! -f /etc/dash-of-pi/config.json ]; then
-    # Run as dash-of-pi user with explicit video directory in working directory
+    # Run as dash-of-pi user to generate initial config
+    # HOME is set to /var/lib/dash-of-pi (matches the system user's home directory)
+    # This ensures the app detects it's running as a system service and uses /var/lib/dash-of-pi/videos
     cd /var/lib/dash-of-pi
     sudo -u dash-of-pi HOME=/var/lib/dash-of-pi /usr/local/bin/dash-of-pi -config /etc/dash-of-pi/config.json &
     sleep 2

@@ -33,14 +33,18 @@ type Config struct {
 }
 
 func DefaultConfig() *Config {
-		// Default to current directory for videos if no config is provided
-		// This allows the app to run without a home directory
-		videoDir := "./videos"
-		
-		// Try XDG state directory only if we have a valid home directory
+	// Default to current directory for videos if no config is provided
+	// This allows the app to run without a home directory
+	videoDir := "./videos"
+	
+	// Try XDG state directory only if we have a valid home directory
 	if homeDir, err := os.UserHomeDir(); err == nil && homeDir != "" {
-		if stateDir, err := xdg.StateFile("dash-of-pi/videos"); err == nil {
-			videoDir = filepath.Dir(stateDir)
+		// Check if home directory is /var/lib/dash-of-pi (system-wide installation)
+		// In this case, store videos directly in /var/lib/dash-of-pi/videos
+		if homeDir == "/var/lib/dash-of-pi" {
+			videoDir = "/var/lib/dash-of-pi/videos"
+		} else if stateDir, err := xdg.StateFile("dash-of-pi/videos"); err == nil {
+			videoDir = stateDir
 		} else {
 			// XDG fallback
 			videoDir = filepath.Join(homeDir, ".local/state/dash-of-pi/videos")
