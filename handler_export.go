@@ -131,34 +131,16 @@ func (s *APIServer) generateExportAsync(startTime, endTime time.Time) {
 		}
 	}()
 
-	// Get all MJPEG files in date range
-	entries, err := os.ReadDir(s.config.VideoDir)
-	if err != nil {
-		s.logger.Printf("Failed to read video directory: %v", err)
-		return
-	}
-
-	var mjpegFiles []string
-	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
-		name := entry.Name()
-		if !IsMJPEGFile(name) {
-			continue
-		}
-
-		info, err := entry.Info()
-		if err != nil {
-			continue
-		}
-
+	// Get all MJPEG files in date range from camera subdirectories
+	mjpegFiles, err := walkCameraVideos(s.config.VideoDir, func(cameraDir, fileName string, info os.FileInfo) bool {
 		modTime := info.ModTime()
 		// Include files within the time range (inclusive of boundaries)
 		// Use After/Before for start, and not After for end to include files up to and including endTime
-		if (modTime.After(startTime) || modTime.Equal(startTime)) && !modTime.After(endTime) {
-			mjpegFiles = append(mjpegFiles, filepath.Join(s.config.VideoDir, name))
-		}
+		return (modTime.After(startTime) || modTime.Equal(startTime)) && !modTime.After(endTime)
+	})
+	if err != nil {
+		s.logger.Printf("Failed to read video directory: %v", err)
+		return
 	}
 
 	if len(mjpegFiles) == 0 {

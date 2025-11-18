@@ -240,3 +240,51 @@ func (sm *StorageManager) CleanupTempExportDirs() int {
 func isVideoFile(name string) bool {
 	return IsMJPEGFile(name)
 }
+
+// walkCameraVideos walks through camera subdirectories and calls the provided function for each video file
+// filterFunc is called with (cameraDir, fileName, fileInfo) and returns true if the file should be included
+func walkCameraVideos(videoDir string, filterFunc func(cameraDir, fileName string, info os.FileInfo) bool) ([]string, error) {
+	entries, err := os.ReadDir(videoDir)
+	if err != nil {
+		return nil, err
+	}
+
+	var videoPaths []string
+	
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		
+		// Skip special directories like .export and .temp_export_*
+		if entry.Name()[0] == '.' {
+			continue
+		}
+		
+		cameraDir := filepath.Join(videoDir, entry.Name())
+		cameraEntries, err := os.ReadDir(cameraDir)
+		if err != nil {
+			continue
+		}
+		
+		for _, videoEntry := range cameraEntries {
+			if videoEntry.IsDir() {
+				continue
+			}
+			if !isVideoFile(videoEntry.Name()) {
+				continue
+			}
+
+			info, err := videoEntry.Info()
+			if err != nil {
+				continue
+			}
+
+			if filterFunc == nil || filterFunc(cameraDir, videoEntry.Name(), info) {
+				videoPaths = append(videoPaths, filepath.Join(cameraDir, videoEntry.Name()))
+			}
+		}
+	}
+	
+	return videoPaths, nil
+}
