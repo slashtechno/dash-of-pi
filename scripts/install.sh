@@ -1,6 +1,44 @@
 #!/bin/bash
 set -e
 
+# Temporary swap provided to keep Go builds alive on memory-constrained Pis
+BUILD_SWAP_FILE="/var/swap-dash-of-pi-build"
+BUILD_SWAP_SIZE_MB=1024
+SWAP_CREATED=false
+
+cleanup_build_swap() {
+    if [ "$SWAP_CREATED" = true ] && [ -f "$BUILD_SWAP_FILE" ]; then
+        swapoff "$BUILD_SWAP_FILE" >/dev/null 2>&1 || true
+        rm -f "$BUILD_SWAP_FILE"
+        SWAP_CREATED=false
+        echo "Disabled temporary build swap"
+    fi
+}
+
+trap cleanup_build_swap EXIT
+
+maybe_enable_build_swap() {
+    local mem_total_kb
+    mem_total_kb=$(awk '/MemTotal/ {print $2}' /proc/meminfo)
+    local swap_threshold_kb=920000
+    if [ "$mem_total_kb" -lt "$swap_threshold_kb" ]; then
+        if [ -f "$BUILD_SWAP_FILE" ]; then
+            rm -f "$BUILD_SWAP_FILE"
+        fi
+        echo "Low-memory system detected (${mem_total_kb} kB); enabling temporary swap for Go build"
+        if command -v fallocate >/dev/null 2>&1; then
+            fallocate -l "${BUILD_SWAP_SIZE_MB}M" "$BUILD_SWAP_FILE"
+        else
+            dd if=/dev/zero of="$BUILD_SWAP_FILE" bs=1M count="$BUILD_SWAP_SIZE_MB" status=none
+        fi
+        chmod 600 "$BUILD_SWAP_FILE"
+        mkswap "$BUILD_SWAP_FILE" >/dev/null
+        swapon "$BUILD_SWAP_FILE"
+        SWAP_CREATED=true
+        echo "Temporary ${BUILD_SWAP_SIZE_MB}MB swap enabled"
+    fi
+}
+
 echo "=== Dash of Pi Installation ==="
 echo
 
@@ -171,9 +209,11 @@ else
 fi
 
 echo "[4/9] Building application..."
+maybe_enable_build_swap
 cd "$(dirname "$0")/.."
 go mod download
 go build -o dash-of-pi .
+cleanup_build_swap
 
 echo "[5/9] Stopping existing service (if running)..."
 if systemctl is-active --quiet dash-of-pi; then

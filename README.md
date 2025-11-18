@@ -166,6 +166,20 @@ ls ~/.local/state/dash-of-pi/videos/
 # Should have .mjpeg files
 ```
 
+**Go build killed on low-RAM Pis:**
+`./scripts/install.sh` automatically creates a temporary 1 GB swap file at `/var/swap-dash-of-pi-build` whenever the system reports less than ~900 MB of RAM so the Go compiler can finish. The swap file is removed after the build completes.
+
+If you're running `go build` manually on a constrained device, enable swap before building and clean it up afterwards:
+```bash
+sudo fallocate -l 1G /var/swap-dash-of-pi-build
+sudo chmod 600 /var/swap-dash-of-pi-build
+sudo mkswap /var/swap-dash-of-pi-build
+sudo swapon /var/swap-dash-of-pi-build
+go build ./...
+sudo swapoff /var/swap-dash-of-pi-build
+sudo rm /var/swap-dash-of-pi-build
+```
+
 **Dashboard shows "Failed to connect":**
 ```bash
 curl http://localhost:8080/health
