@@ -252,10 +252,7 @@ if [ ! -f /etc/dash-of-pi/config.json ]; then
     sleep 2
     pkill -f "dash-of-pi" || true
     
-    # Update the generated config to use the correct video directory
     if [ -f /etc/dash-of-pi/config.json ]; then
-        # Use sed to replace "./videos" with "/var/lib/dash-of-pi/videos"
-        sed -i 's|"./videos"|"/var/lib/dash-of-pi/videos"|g' /etc/dash-of-pi/config.json
         chown dash-of-pi:dash-of-pi /etc/dash-of-pi/config.json
         chmod 640 /etc/dash-of-pi/config.json
     fi
