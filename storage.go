@@ -50,7 +50,7 @@ func (sm *StorageManager) cleanupLoop() {
 }
 
 func (sm *StorageManager) enforceStorageCap() error {
-	// Get all video files
+	// Get all video files from camera subdirectories
 	entries, err := os.ReadDir(sm.videoDir)
 	if err != nil {
 		return fmt.Errorf("failed to read video directory: %w", err)
@@ -65,26 +65,45 @@ func (sm *StorageManager) enforceStorageCap() error {
 	var files []fileInfo
 	var totalSize int64
 
+	// Scan camera subdirectories for video files
 	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
-		if !isVideoFile(entry.Name()) {
+		if !entry.IsDir() {
+			// Skip non-directories (shouldn't have loose files here)
 			continue
 		}
 
-		info, err := entry.Info()
+		// Skip special directories
+		if entry.Name()[0] == '.' {
+			continue
+		}
+
+		cameraDir := filepath.Join(sm.videoDir, entry.Name())
+		cameraEntries, err := os.ReadDir(cameraDir)
 		if err != nil {
 			continue
 		}
 
-		fileSize := info.Size()
-		files = append(files, fileInfo{
-			path:    filepath.Join(sm.videoDir, entry.Name()),
-			modTime: info.ModTime(),
-			size:    fileSize,
-		})
-		totalSize += fileSize
+		for _, videoEntry := range cameraEntries {
+			if videoEntry.IsDir() {
+				continue
+			}
+			if !isVideoFile(videoEntry.Name()) {
+				continue
+			}
+
+			info, err := videoEntry.Info()
+			if err != nil {
+				continue
+			}
+
+			fileSize := info.Size()
+			files = append(files, fileInfo{
+				path:    filepath.Join(cameraDir, videoEntry.Name()),
+				modTime: info.ModTime(),
+				size:    fileSize,
+			})
+			totalSize += fileSize
+		}
 	}
 
 	// Update cached usage
@@ -110,17 +129,17 @@ func (sm *StorageManager) enforceStorageCap() error {
 				deletedCount++
 				totalSize -= f.size
 				sm.lastUsed = totalSize // Update cache after deletion
-				fmt.Printf("Deleted old video: %s (modified: %s, size: %.2f MB)\n", 
-					filepath.Base(f.path), 
-					f.modTime.Format("2006-01-02 15:04:05"), 
+				fmt.Printf("Deleted old video: %s (modified: %s, size: %.2f MB)\n",
+					filepath.Base(f.path),
+					f.modTime.Format("2006-01-02 15:04:05"),
 					float64(f.size)/BytesPerMB)
 			}
 		}
-		
+
 		if deletedCount > 0 {
-			fmt.Printf("Storage cleanup complete: deleted %d video(s), now using %.2f GB / %d GB\n", 
-				deletedCount, 
-				float64(totalSize)/BytesPerGB, 
+			fmt.Printf("Storage cleanup complete: deleted %d video(s), now using %.2f GB / %d GB\n",
+				deletedCount,
+				float64(totalSize)/BytesPerGB,
 				sm.storageCapGB)
 		}
 	}
@@ -135,7 +154,7 @@ func (sm *StorageManager) GetStorageStats() (used int64, cap int64, err error) {
 		return sm.lastUsed, cap, nil
 	}
 
-	// Otherwise, recalculate
+	// Otherwise, recalculate from camera subdirectories
 	entries, err := os.ReadDir(sm.videoDir)
 	if err != nil {
 		return 0, 0, err
@@ -143,19 +162,35 @@ func (sm *StorageManager) GetStorageStats() (used int64, cap int64, err error) {
 
 	used = 0
 	for _, entry := range entries {
-		// Skip directories (including .export and .temp_export_*)
-		if entry.IsDir() {
-			continue
-		}
-		if !isVideoFile(entry.Name()) {
+		if !entry.IsDir() {
 			continue
 		}
 
-		info, err := entry.Info()
+		// Skip special directories like .export and .temp_export_*
+		if entry.Name()[0] == '.' {
+			continue
+		}
+
+		cameraDir := filepath.Join(sm.videoDir, entry.Name())
+		cameraEntries, err := os.ReadDir(cameraDir)
 		if err != nil {
 			continue
 		}
-		used += info.Size()
+
+		for _, videoEntry := range cameraEntries {
+			if videoEntry.IsDir() {
+				continue
+			}
+			if !isVideoFile(videoEntry.Name()) {
+				continue
+			}
+
+			info, err := videoEntry.Info()
+			if err != nil {
+				continue
+			}
+			used += info.Size()
+		}
 	}
 
 	// Update cache
@@ -179,13 +214,13 @@ func (sm *StorageManager) CleanupTempExportDirs() int {
 		fmt.Printf("Failed to read video directory for cleanup: %v\n", err)
 		return 0
 	}
-	
+
 	var cleaned int
 	for _, entry := range entries {
 		if !entry.IsDir() {
 			continue
 		}
-		
+
 		name := entry.Name()
 		// Check if it's a temporary export directory
 		if len(name) > 13 && name[:13] == ".temp_export_" {
@@ -198,7 +233,7 @@ func (sm *StorageManager) CleanupTempExportDirs() int {
 			}
 		}
 	}
-	
+
 	return cleaned
 }
 
