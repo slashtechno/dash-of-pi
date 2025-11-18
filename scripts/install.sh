@@ -11,9 +11,13 @@ if [ "$EUID" -ne 0 ]; then
     exit 1
 fi
 
-# Detect Pi Zero 2W
-if ! grep -q "Pi Zero 2" /proc/device-tree/model 2>/dev/null; then
-    echo "WARNING: This doesn't appear to be a Raspberry Pi Zero 2W"
+PI_MODEL=$(tr -d '\0' </proc/device-tree/model 2>/dev/null || true)
+IS_PI=false
+if echo "$PI_MODEL" | grep -qi "raspberry pi"; then
+    IS_PI=true
+    echo "Detected Raspberry Pi model: $PI_MODEL"
+else
+    echo "WARNING: This doesn't appear to be a Raspberry Pi"
     read -p "Continue anyway? (y/N) " -n 1 -r
     echo
     if [[ ! $REPLY =~ ^[Yy]$ ]]; then
@@ -21,13 +25,87 @@ if ! grep -q "Pi Zero 2" /proc/device-tree/model 2>/dev/null; then
     fi
 fi
 
-echo "[1/8] Installing dependencies..."
+CAMERA_MODE="${DASH_OF_PI_CAMERA_SENSOR:-auto}"
+PIN_IMX219=true
+case "$CAMERA_MODE" in
+    auto|AUTO|Auto)
+        CAMERA_MODE="auto"
+        PIN_IMX219=false
+        ;;
+    imx219|IMX219|"")
+        CAMERA_MODE="imx219"
+        PIN_IMX219=true
+        ;;
+    *)
+        echo "WARNING: Unknown DASH_OF_PI_CAMERA_SENSOR value '$CAMERA_MODE'. Falling back to auto-detect."
+        CAMERA_MODE="auto"
+        PIN_IMX219=false
+        ;;
+esac
+
+CAMERA_OVERLAY_LINE="dtoverlay=imx219"
+CAMERA_OVERLAY_KEY="imx219"
+
+CONFIG_FILE=""
+if [ "$IS_PI" = true ]; then
+    if [ -f /boot/firmware/config.txt ]; then
+        CONFIG_FILE=/boot/firmware/config.txt
+    elif [ -f /boot/config.txt ]; then
+        CONFIG_FILE=/boot/config.txt
+    fi
+fi
+
+set_config_value() {
+    local key="$1"
+    local value="$2"
+
+    if grep -Eq "^\s*${key}\s*=" "$CONFIG_FILE"; then
+        sed -i "s|^\s*${key}\s*=.*|${key}=${value}|" "$CONFIG_FILE"
+    else
+        printf "\n%s=%s\n" "$key" "$value" >> "$CONFIG_FILE"
+    fi
+}
+
+ensure_camera_overlay() {
+    local overlay_key="$1"
+    local overlay_line="$2"
+
+    if grep -Eq "^\s*dtoverlay=${overlay_key}" "$CONFIG_FILE"; then
+        sed -i "s|^\s*dtoverlay=${overlay_key}.*|${overlay_line}|" "$CONFIG_FILE"
+    else
+        printf "\n# Added by dash-of-pi installer\n%s\n" "$overlay_line" >> "$CONFIG_FILE"
+    fi
+}
+
+echo "[1/9] Installing dependencies..."
 apt-get update
 apt-get install -y \
     build-essential \
     git \
     ffmpeg \
     wget
+
+if [ "$IS_PI" = true ]; then
+    echo "Installing Raspberry Pi camera utilities..."
+    if ! apt-get install -y rpicam-apps v4l-utils; then
+        echo "rpicam-apps not available, falling back to libcamera-apps"
+        apt-get install -y libcamera-apps v4l-utils
+    fi
+fi
+
+echo "[2/9] Configuring Raspberry Pi camera support..."
+if [ "$IS_PI" = true ] && [ -n "$CONFIG_FILE" ]; then
+    if [ "$PIN_IMX219" = true ]; then
+        set_config_value camera_auto_detect 0
+        ensure_camera_overlay "$CAMERA_OVERLAY_KEY" "$CAMERA_OVERLAY_LINE"
+        echo "Pinned $CAMERA_MODE overlay in $CONFIG_FILE (${CAMERA_OVERLAY_LINE})."
+        echo "A reboot is required for camera changes to take effect."
+    else
+        echo "Auto-detect enabled (DASH_OF_PI_CAMERA_SENSOR=auto), leaving config.txt untouched."
+    fi
+else
+    echo "Skipping camera configuration (not running on Raspberry Pi or config.txt not found)."
+fi
 
 # Install Go 1.24.9 to /usr/local (unless there's a go version 1.20+ already) 
 # Check if Go is installed and get its version
@@ -76,7 +154,7 @@ fi
 # Verify Go installation
 go version
 
-echo "[2/8] Creating dash-of-pi user..."
+echo "[3/9] Creating dash-of-pi user..."
 if ! id "dash-of-pi" &>/dev/null; then
     useradd -r -s /bin/false dash-of-pi
     echo "Created user: dash-of-pi"
@@ -92,18 +170,18 @@ else
     echo "dash-of-pi already in video group"
 fi
 
-echo "[3/8] Building application..."
+echo "[4/9] Building application..."
 cd "$(dirname "$0")/.."
 go mod download
 go build -o dash-of-pi .
 
-echo "[4/8] Stopping existing service (if running)..."
+echo "[5/9] Stopping existing service (if running)..."
 if systemctl is-active --quiet dash-of-pi; then
     systemctl stop dash-of-pi
     echo "Stopped running service"
 fi
 
-echo "[5/8] Installing files..."
+echo "[6/9] Installing files..."
 mkdir -p /var/lib/dash-of-pi/videos
 mkdir -p /etc/dash-of-pi
 mkdir -p /var/lib/dash-of-pi/web
@@ -122,7 +200,7 @@ chown dash-of-pi:dash-of-pi /etc/dash-of-pi
 chmod 750 /var/lib/dash-of-pi
 chmod 750 /etc/dash-of-pi
 
-echo "[6/8] Creating initial config..."
+echo "[7/9] Creating initial config..."
 if [ ! -f /etc/dash-of-pi/config.json ]; then
     # Run as dash-of-pi user with explicit video directory in working directory
     cd /var/lib/dash-of-pi
@@ -143,11 +221,11 @@ else
     echo "Config already exists at /etc/dash-of-pi/config.json"
 fi
 
-echo "[7/8] Enabling systemd service..."
+echo "[8/9] Enabling systemd service..."
 systemctl daemon-reload
 systemctl enable dash-of-pi
 
-echo "[8/8] Starting service..."
+echo "[9/9] Starting service..."
 systemctl start dash-of-pi
 
 echo

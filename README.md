@@ -179,10 +179,27 @@ cat ~/.config/dash-of-pi/config.json | grep auth_token
 
 ## Hardware Requirements
 
-- Raspberry Pi Zero 2W (or compatible Pi)
-- Pi Camera v2/v3
+- Raspberry Pi Zero 2W, Pi 4/5, or Compute Module 4/5
+- Sony IMX219 camera (Pi Camera Module 2 or Arducam IMX219 clone)
 - microSD 16GB+
 - 5V/2.5A power
+
+## Raspberry Pi Camera Setup (IMX219)
+
+`scripts/install.sh` grabs the official `rpicam-apps` tools (the Bookworm rename of `libcamera-*`) and handles the camera overlay for you. Here is the short version:
+
+1. **Plug the camera in while the Pi is off.** Follow the [official guide](https://www.raspberrypi.com/documentation/accessories/camera.html) for the ribbon cable and, on Pi 5/CM5, the 22-pin adapter.
+2. **Run the installer.** `sudo ./scripts/install.sh` now defaults to Raspberry Pi’s auto-detect, so no extra overlay work is needed.
+  Want to pin the IMX219 overlay? Run `DASH_OF_PI_CAMERA_SENSOR=imx219 sudo ./scripts/install.sh` (add `,cam0` yourself when using CAM0 on Pi 5/CM5).
+3. **Reboot when prompted** so the overlay takes effect.
+4. **Spot-check with rpicam** before launching Dash of Pi:
+   ```bash
+   rpicam-still --list-cameras
+   rpicam-hello -t 2000
+   ```
+   You should see a Sony IMX219 entry and a preview window.
+
+> Different sensor? Follow the [official docs](https://www.raspberrypi.com/documentation/accessories/camera.html) and open a PR with what worked—we’ll gladly add it.
 
 ## Deployment
 
