@@ -315,7 +315,7 @@ async function loadCameras() {
 				'ID: ' + camera.id + ' • ' + camera.res_width + 'x' + camera.res_height + ' • ' +
 				'Rotation: ' + rotationLabel +
 				'</div>' +
-				'<div class="camera-device">' + camera.device + ' • format: ' + pixelFormatLabel + '</div>' +
+				'<div class="camera-device">' + camera.device + '</div>' +
 				'</div>' +
 				'<div class="camera-status" style="' + (camera.enabled ? 'background: #4ade80' : 'background: #666') + '">' +
 				(camera.enabled ? '✓ Active' : '○ Disabled') +
@@ -341,7 +341,6 @@ function openAddCameraModal() {
 	document.getElementById('cameraId').disabled = true;
 	document.getElementById('cameraName').value = '';
 	document.getElementById('cameraDevice').value = '';
-	document.getElementById('cameraPixelFormat').value = 'auto';
 	document.getElementById('cameraRotation').value = '0';
 	document.getElementById('cameraResWidth').value = '1920';
 	document.getElementById('cameraResHeight').value = '1080';
@@ -366,11 +365,10 @@ async function editCamera(cameraId) {
 		editingCameraId = cameraId;
 		document.getElementById('cameraModalTitle').textContent = 'Edit Camera';
 		document.getElementById('cameraId').value = camera.id;
-		document.getElementById('cameraId').disabled = true;
-		document.getElementById('cameraName').value = camera.name;
-		document.getElementById('cameraDevice').value = camera.device;
-		document.getElementById('cameraPixelFormat').value = camera.pixel_format || 'auto';
-		document.getElementById('cameraRotation').value = camera.rotation;
+			document.getElementById('cameraId').disabled = true;
+			document.getElementById('cameraName').value = camera.name;
+			document.getElementById('cameraDevice').value = camera.device;
+			document.getElementById('cameraRotation').value = camera.rotation;
 		document.getElementById('cameraResWidth').value = camera.res_width;
 		document.getElementById('cameraResHeight').value = camera.res_height;
 		document.getElementById('cameraBitrate').value = camera.bitrate;
@@ -401,10 +399,6 @@ async function saveCameraConfig() {
 	const cameraData = {
 		name: name,
 		device: device,
-		pixel_format: (function() {
-			const value = document.getElementById('cameraPixelFormat').value.trim();
-			return value === '' ? 'auto' : value.toLowerCase();
-		})(),
 		rotation: parseInt(document.getElementById('cameraRotation').value),
 		res_width: parseInt(document.getElementById('cameraResWidth').value),
 		res_height: parseInt(document.getElementById('cameraResHeight').value),

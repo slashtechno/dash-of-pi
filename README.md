@@ -83,7 +83,6 @@ Config stored at `~/.config/dash-of-pi/config.json`. See `config.json.example` f
       "id": "front",
       "name": "Front Camera",
       "device": "/dev/video0",
-      "pixel_format": "auto",
       "rotation": 0,
       "res_width": 1920,
       "res_height": 1080,
@@ -97,7 +96,6 @@ Config stored at `~/.config/dash-of-pi/config.json`. See `config.json.example` f
       "id": "rear",
       "name": "Rear Camera",
       "device": "/dev/video1",
-      "pixel_format": "yuv420p",
       "rotation": 180,
       "res_width": 1280,
       "res_height": 720,
@@ -122,7 +120,6 @@ Config stored at `~/.config/dash-of-pi/config.json`. See `config.json.example` f
 - `id`: Unique camera identifier (used in URLs and directory structure)
 - `name`: User-friendly camera name
 - `device`: Video input device (e.g., `/dev/video0`, `/dev/video1`)
-- `pixel_format`: Optional V4L2 pixel format hint (defaults to `auto`; set to a supported format if your camera rejects MJPEG)
 - `rotation`: Camera rotation in degrees (0, 90, 180, 270)
 - `res_width` / `res_height`: Video resolution
 - `bitrate`: Video bitrate in kbps
@@ -153,7 +150,7 @@ Restart service to apply config changes.
   - Only one export is kept at a time (replaces previous export)
   - Export can be downloaded multiple times until deleted or replaced
   - All times displayed in UTC (noted in footer)
-- **Camera Editor:** Add, remove, or edit cameras (device, pixel format, resolution, etc.) directly in the browser; changes persist to the config file and trigger a camera restart.
+- **Camera Editor:** Add, remove, or edit cameras (device, resolution, etc.) directly in the browser; changes persist to the config file and trigger a camera restart.
 
 ## Troubleshooting
 
@@ -171,11 +168,6 @@ journalctl -u dash-of-pi -f
 ls ~/.local/state/dash-of-pi/videos/
 # Should have .mjpeg files
 ```
-
-**CSI camera shows `Cannot find a proper format for codec 'mjpeg'`:**
-- Run `ffmpeg -f v4l2 -list_formats all -i /dev/video0` (or `v4l2-ctl --list-formats-ext -d /dev/video0`). Look for the `Pixel Format` column -- pick one that your device advertises (e.g., `yuv420p`, `yuyv422`, `SRGGB10_CSI2P`).
-- Set that string in the `pixel_format` field via the dashboard camera editor or config file (leave other cameras on `auto`).
-- Restart the service so FFmpeg launches with the updated input format.
 
 **Go build killed on low-RAM Pis:**
 `./scripts/install.sh` automatically creates a temporary 1 GB swap file at `/var/swap-dash-of-pi-build` whenever the system reports less than ~900 MB of RAM so the Go compiler can finish. The swap file is removed after the build completes.
@@ -209,23 +201,26 @@ cat ~/.config/dash-of-pi/config.json | grep auth_token
 - microSD 16GB+
 - 5V/2.5A power
 
+
 ## Raspberry Pi Camera Setup (IMX219)
 
-`scripts/install.sh` grabs the official `rpicam-apps` tools (the Bookworm rename of `libcamera-*`) and handles the camera overlay for you. Here is the short version:
+Dash of Pi automatically detects CSI cameras and uses the native libcamera stack (rpicam-vid) for capture—no configuration needed.
+
+**Setup:**
+
+`scripts/install.sh` handles camera detection and overlay configuration. If you have a CSI camera:
 
 1. **Plug the camera in while the Pi is off.** Follow the [official guide](https://www.raspberrypi.com/documentation/accessories/camera.html) for the ribbon cable and, on Pi 5/CM5, the 22-pin adapter.
-2. **Run the installer.** `sudo ./scripts/install.sh` now defaults to Raspberry Pi’s auto-detect, so no extra overlay work is needed.
-  Want to pin the IMX219 overlay? Run `DASH_OF_PI_CAMERA_SENSOR=imx219 sudo ./scripts/install.sh` (add `,cam0` yourself when using CAM0 on Pi 5/CM5).
-3. **Reboot when prompted** so the overlay takes effect.
-4. **Spot-check with rpicam** before launching Dash of Pi:
+2. **Run the installer:** `sudo ./scripts/install.sh`
+3. **Reboot when prompted.**
+4. **Verify** with rpicam before launching Dash of Pi:
    ```bash
    rpicam-still --list-cameras
    rpicam-hello -t 2000
    ```
-   You should see a Sony IMX219 entry and a preview window.
+5. **Start Dash of Pi.** It will auto-detect the camera and begin recording.
 
-> Different sensor? Follow the [official docs](https://www.raspberrypi.com/documentation/accessories/camera.html) and open a PR with what worked—we’ll gladly add it.
-
+> Different sensor? Follow the [official docs](https://www.raspberrypi.com/documentation/accessories/camera.html) and open a PR with what worked—we'll gladly add it.
 ## Deployment
 
 See docker-compose.yml or scripts/install.sh for systemd setup.

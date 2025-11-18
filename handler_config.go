@@ -10,11 +10,10 @@ func convertCameraConfigs(configs []CameraConfig) []camera.CameraConfig {
 	result := make([]camera.CameraConfig, len(configs))
 	for i, c := range configs {
 		result[i] = camera.CameraConfig{
-			ID:             c.ID,
-			Name:           c.Name,
-			Device:         c.Device,
-			PixelFormat:    c.PixelFormat,
-			Rotation:       c.Rotation,
+			ID:       c.ID,
+			Name:     c.Name,
+			Device:   c.Device,
+			Rotation: c.Rotation,
 			ResWidth:       c.ResWidth,
 			ResHeight:      c.ResHeight,
 			Bitrate:        c.Bitrate,

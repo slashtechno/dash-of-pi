@@ -25,18 +25,10 @@ func (c *Camera) recordAndStreamSegment(filename string) error {
 	}
 
 	if inputFormat == "video4linux2" || inputFormat == "v4l2" {
-		pixelFormat := strings.TrimSpace(c.camConfig.PixelFormat)
-		if pixelFormat == "" {
-			pixelFormat = "auto"
-		}
-
-		if !strings.EqualFold(pixelFormat, "auto") {
-			args = append(args, "-input_format", strings.ToLower(pixelFormat))
-		}
-
-		if c.camConfig.ResWidth > 0 && c.camConfig.ResHeight > 0 {
-			args = append(args, "-video_size", fmt.Sprintf("%dx%d", c.camConfig.ResWidth, c.camConfig.ResHeight))
-		}
+		args = append(args,
+			"-input_format", "mjpeg",
+			"-video_size", fmt.Sprintf("%dx%d", c.camConfig.ResWidth, c.camConfig.ResHeight),
+		)
 	}
 
 	args = append(args,

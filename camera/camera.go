@@ -11,11 +11,10 @@ import (
 
 // CameraConfig represents the configuration for a single camera
 type CameraConfig struct {
-	ID             string `json:"id"`
-	Name           string `json:"name"`
-	Device         string `json:"device"`
-	PixelFormat    string `json:"pixel_format,omitempty"`
-	Rotation       int    `json:"rotation"`
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	Device    string `json:"device"`
+	Rotation  int    `json:"rotation"`
 	ResWidth       int    `json:"res_width"`
 	ResHeight      int    `json:"res_height"`
 	Bitrate        int    `json:"bitrate"`
@@ -47,9 +46,13 @@ func NewCamera(config CameraConfig, segmentLength int, logger Logger) (*Camera, 
 		segmentLength: segmentLength,
 	}
 
-	// Detect available encoder on startup
+	// Detect available encoder on startup (for V4L2 cameras)
 	camera.videoEncoder = detectVideoEncoder(logger)
-	logger.Printf("Camera '%s' (%s): Using video encoder: %s", config.Name, config.ID, camera.videoEncoder)
+	if IsCSICamera(logger) {
+		logger.Printf("Camera '%s' (%s): Using libcamera (rpicam-vid) for CSI camera", config.Name, config.ID)
+	} else {
+		logger.Printf("Camera '%s' (%s): Using video encoder: %s", config.Name, config.ID, camera.videoEncoder)
+	}
 
 	return camera, nil
 }
@@ -87,7 +90,15 @@ func (c *Camera) Start(videoDir string) error {
 
 		c.logger.Debugf("Camera '%s': Starting recording segment: %s", c.camConfig.Name, filepath.Base(filename))
 
-		if err := c.recordAndStreamSegment(filename); err != nil {
+		// Use libcamera (rpicam-vid) for CSI cameras, FFmpeg for V4L2
+		var err error
+		if IsCSICamera(c.logger) {
+			err = c.recordAndStreamSegmentLibcamera(filename)
+		} else {
+			err = c.recordAndStreamSegment(filename)
+		}
+
+		if err != nil {
 			if time.Since(c.lastErrorTime) > 5*time.Second {
 				c.logger.Printf("Camera '%s': Recording error: %v", c.camConfig.Name, err)
 				c.lastErrorTime = time.Now()

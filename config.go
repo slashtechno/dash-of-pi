@@ -5,24 +5,22 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/adrg/xdg"
 )
 
 type CameraConfig struct {
-	ID             string `json:"id"`                     // Unique identifier (auto-generated if empty)
-	Name           string `json:"name"`                   // User-friendly name (e.g., "Front", "Rear")
-	Device         string `json:"device"`                 // e.g., /dev/video0, /dev/video1
-	PixelFormat    string `json:"pixel_format,omitempty"` // Optional V4L2 pixel format hint
-	Rotation       int    `json:"rotation"`               // 0, 90, 180, 270 degrees
-	ResWidth       int    `json:"res_width"`              // Video width
-	ResHeight      int    `json:"res_height"`             // Video height
-	Bitrate        int    `json:"bitrate"`                // in kbps
-	FPS            int    `json:"fps"`                    // frames per second
-	MJPEGQuality   int    `json:"mjpeg_quality"`          // 2-31, lower = higher quality
-	EmbedTimestamp bool   `json:"embed_timestamp"`        // Whether to overlay timestamp on video
-	Enabled        bool   `json:"enabled"`                // Whether this camera is active
+	ID            string `json:"id"`              // Unique identifier (auto-generated if empty)
+	Name          string `json:"name"`            // User-friendly name (e.g., "Front", "Rear")
+	Device        string `json:"device"`          // e.g., /dev/video0, /dev/video1
+	Rotation      int    `json:"rotation"`        // 0, 90, 180, 270 degrees
+	ResWidth      int    `json:"res_width"`       // Video width
+	ResHeight     int    `json:"res_height"`      // Video height
+	Bitrate       int    `json:"bitrate"`         // in kbps
+	FPS           int    `json:"fps"`             // frames per second
+	MJPEGQuality  int    `json:"mjpeg_quality"`   // 2-31, lower = higher quality
+	EmbedTimestamp bool  `json:"embed_timestamp"` // Whether to overlay timestamp on video
+	Enabled       bool   `json:"enabled"`         // Whether this camera is active
 }
 
 type Config struct {
@@ -35,11 +33,11 @@ type Config struct {
 }
 
 func DefaultConfig() *Config {
-	// Default to current directory for videos if no config is provided
-	// This allows the app to run without a home directory
-	videoDir := "./videos"
-
-	// Try XDG state directory only if we have a valid home directory
+		// Default to current directory for videos if no config is provided
+		// This allows the app to run without a home directory
+		videoDir := "./videos"
+		
+		// Try XDG state directory only if we have a valid home directory
 	if homeDir, err := os.UserHomeDir(); err == nil && homeDir != "" {
 		if stateDir, err := xdg.StateFile("dash-of-pi/videos"); err == nil {
 			videoDir = filepath.Dir(stateDir)
@@ -56,11 +54,10 @@ func DefaultConfig() *Config {
 		SegmentLengthS: DefaultSegmentLengthS,
 		Cameras: []CameraConfig{
 			{
-				ID:             "default",
-				Name:           "Default Camera",
-				Device:         DefaultCameraDevice,
-				PixelFormat:    "auto",
-				Rotation:       0,
+				ID:       "default",
+				Name:     "Default Camera",
+				Device:   DefaultCameraDevice,
+				Rotation: 0,
 				ResWidth:       DefaultVideoWidth,
 				ResHeight:      DefaultVideoHeight,
 				Bitrate:        DefaultVideoBitrate,
@@ -106,9 +103,6 @@ func LoadOrCreateConfig(configPath string) (*Config, error) {
 			}
 			if cam.MJPEGQuality == 0 {
 				cam.MJPEGQuality = DefaultMJPEGQuality
-			}
-			if strings.TrimSpace(cam.PixelFormat) == "" {
-				cam.PixelFormat = "auto"
 			}
 		}
 
