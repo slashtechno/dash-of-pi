@@ -121,7 +121,8 @@ apt-get install -y \
     build-essential \
     git \
     ffmpeg \
-    wget
+    wget \
+    fonts-dejavu-core
 
 if [ "$IS_PI" = true ]; then
     echo "Installing Raspberry Pi camera utilities..."
