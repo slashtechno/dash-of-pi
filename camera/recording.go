@@ -99,6 +99,10 @@ func (c *Camera) recordAndStreamSegment(filename string) error {
 		for {
 			n, err := stderr.Read(buf)
 			if n > 0 {
+				// Prevent unbounded growth - keep only the last ~16KB
+				if stderrOutput.Len() > 16*1024 {
+					stderrOutput.Reset()
+				}
 				stderrOutput.Write(buf[:n])
 			}
 			if err != nil {
@@ -114,11 +118,14 @@ func (c *Camera) recordAndStreamSegment(filename string) error {
 	c.recordCmd = nil
 	c.cmdMu.Unlock()
 
-	if recordErr != nil && stderrOutput.Len() > 0 {
-		c.logger.Printf("FFmpeg error output: %s", stderrOutput.String())
+	if recordErr != nil {
+		if stderrOutput.Len() > 0 {
+			return fmt.Errorf("%w: %s", recordErr, stderrOutput.String())
+		}
+		return recordErr
 	}
 
-	return recordErr
+	return nil
 }
 
 // getCameraInput returns the format and device based on OS

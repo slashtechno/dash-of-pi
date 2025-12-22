@@ -153,6 +153,7 @@ func (cm *CameraManager) startCamera(cam *Camera) {
 		defer cm.cameraWg.Done()
 		config := cam.GetConfig()
 		cameraVideoDir := filepath.Join(cm.videoDir, config.ID)
+		cm.logger.Printf("Camera '%s': Saving videos to %s", config.Name, cameraVideoDir)
 		if err := cam.Start(cameraVideoDir); err != nil {
 			cm.logger.Printf("Camera '%s' stopped: %v", config.Name, err)
 		}

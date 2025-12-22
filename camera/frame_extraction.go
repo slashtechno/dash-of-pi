@@ -56,6 +56,13 @@ func ExtractFrameFromLatestSegment(videoDir string, logger Logger) []byte {
 		return nil
 	}
 
+	// If the latest file is too old (e.g. > 30 seconds), it's likely from a previous run
+	// and we shouldn't use it for the "live" stream.
+	if time.Since(latestTime) > 30*time.Second {
+		// logger.Debugf("Latest video segment '%s' is too old (%v), ignoring", filepath.Base(latestFile), latestTime)
+		return nil
+	}
+
 	// Extract the last JPEG frame directly from the MJPEG file
 	// MJPEG = concatenated JPEGs with markers: FFD8 (start) ... FFD9 (end)
 	frameData := extractLastJPEGFromMJPEG(latestFile)

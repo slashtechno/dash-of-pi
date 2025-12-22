@@ -1,6 +1,7 @@
 package camera
 
 import (
+	"bytes"
 	"fmt"
 	"os/exec"
 	"strings"
@@ -99,13 +100,21 @@ func (c *Camera) recordAndStreamSegmentLibcamera(filename string) error {
 		return err
 	}
 
+	var stderrBuf bytes.Buffer
+
 	// Log stderr (rpicam-vid debugging)
 	go func() {
 		buf := make([]byte, 4096)
 		for {
 			n, err := stderr.Read(buf)
 			if n > 0 {
-				c.logger.Debugf("rpicam-vid: %s", string(buf[:n]))
+				chunk := buf[:n]
+				// Keep last 4KB of logs for error reporting
+				if stderrBuf.Len()+n > 4096 {
+					stderrBuf.Reset()
+				}
+				stderrBuf.Write(chunk)
+				c.logger.Debugf("rpicam-vid: %s", string(chunk))
 			}
 			if err != nil {
 				break
@@ -120,5 +129,9 @@ func (c *Camera) recordAndStreamSegmentLibcamera(filename string) error {
 	c.recordCmd = nil
 	c.cmdMu.Unlock()
 
-	return recordErr
+	if recordErr != nil {
+		return fmt.Errorf("%w: %s", recordErr, stderrBuf.String())
+	}
+
+	return nil
 }
