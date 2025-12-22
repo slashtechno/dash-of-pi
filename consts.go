@@ -72,9 +72,9 @@ const (
 	DefaultPort           = 8080
 	DefaultStorageCapGB   = 10
 	DefaultVideoBitrate   = 1024 // kbps
-	DefaultVideoFPS       = 24
-	DefaultVideoWidth     = 1280
-	DefaultVideoHeight    = 720
+	DefaultVideoFPS       = 30
+	DefaultVideoWidth     = 1920
+	DefaultVideoHeight    = 1080
 	DefaultSegmentLengthS = 60   // seconds
 	DefaultMJPEGQuality   = 8    // 2-31 scale, lower is better, 8=good balance
 	DefaultEmbedTimestamp = true // Embed timestamp by default

@@ -165,8 +165,11 @@ journalctl -u dash-of-pi -f
 
 **No video being recorded:**
 ```bash
+# Should have .mjpeg files:
 ls ~/.local/state/dash-of-pi/videos/
-# Should have .mjpeg files
+# Make sure that the resolution and FPS that are set in the config are supported by the camera:
+rpicam-still --list-cameras
+sudo cat /etc/dash-of-pi/config.json | grep -e "res_" -e "fps"
 ```
 
 **Go build killed on low-RAM Pis:**
