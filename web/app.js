@@ -1,4 +1,14 @@
 let authToken = localStorage.getItem('authToken');
+
+// Check for token in URL to allow auto-login
+const urlParams = new URLSearchParams(window.location.search);
+if (urlParams.has('token')) {
+	authToken = urlParams.get('token');
+	localStorage.setItem('authToken', authToken);
+	// Remove token from URL to keep it clean
+	window.history.replaceState({}, document.title, window.location.pathname);
+}
+
 let startTime = Date.now();
 let editingCameraId = null;
 
