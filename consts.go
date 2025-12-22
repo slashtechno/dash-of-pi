@@ -75,6 +75,7 @@ const (
 	DefaultVideoFPS       = 30
 	DefaultVideoWidth     = 1920
 	DefaultVideoHeight    = 1080
+	DefaultRotation       = 270  // Rotate by 270 degrees since the design I created mounts the camera upside-down and I'll probably end up including the STL
 	DefaultSegmentLengthS = 60   // seconds
 	DefaultMJPEGQuality   = 8    // 2-31 scale, lower is better, 8=good balance
 	DefaultEmbedTimestamp = true // Embed timestamp by default
