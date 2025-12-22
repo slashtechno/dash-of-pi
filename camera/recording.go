@@ -58,7 +58,16 @@ func (c *Camera) recordAndStreamSegment(filename string) error {
 		videoFilters = append(videoFilters, fmt.Sprintf("scale=%d:%d", c.camConfig.ResWidth, c.camConfig.ResHeight))
 	}
 	if c.camConfig.EmbedTimestamp {
-		videoFilters = append(videoFilters, getTimestampFilter())
+		timestampFilter := "drawtext=text='%{gmtime\\:%Y-%m-%d %H\\\\\\:%M\\\\\\:%S} \\\\(UTC\\\\)':fontcolor=white:fontsize=24:box=1:boxcolor=black@0.5:boxborderw=5:x=10:y=10"
+
+		// Check for common font locations to ensure drawtext works
+		// Debian/Ubuntu/Raspberry Pi OS usually have DejaVuSans
+		fontPath := "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+		if _, err := os.Stat(fontPath); err == nil {
+			timestampFilter += fmt.Sprintf(":fontfile=%s", fontPath)
+		}
+
+		videoFilters = append(videoFilters, timestampFilter)
 	}
 	if len(videoFilters) > 0 {
 		args = append(args, "-vf", strings.Join(videoFilters, ","))
@@ -152,17 +161,4 @@ func (c *Camera) Stop() {
 	if c.recordCmd != nil && c.recordCmd.Process != nil {
 		c.recordCmd.Process.Kill()
 	}
-}
-
-// getTimestampFilter returns the FFmpeg drawtext filter string for embedding timestamps
-func getTimestampFilter() string {
-	timestampFilter := "drawtext=text='%{gmtime\\:%Y-%m-%d %H\\\\\\:%M\\\\\\:%S} \\\\(UTC\\\\)':fontcolor=white:fontsize=24:box=1:boxcolor=black@0.5:boxborderw=5:x=10:y=10"
-
-	// Check for common font locations to ensure drawtext works
-	// Debian/Ubuntu/Raspberry Pi OS usually have DejaVuSans
-	fontPath := "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
-	if _, err := os.Stat(fontPath); err == nil {
-		timestampFilter += fmt.Sprintf(":fontfile=%s", fontPath)
-	}
-	return timestampFilter
 }

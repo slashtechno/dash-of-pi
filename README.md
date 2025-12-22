@@ -121,12 +121,14 @@ Config stored at `~/.config/dash-of-pi/config.json`. See `config.json.example` f
 - `name`: User-friendly camera name
 - `device`: Video input device (e.g., `/dev/video0`, `/dev/video1`)
 - `rotation`: Camera rotation in degrees (0, 90, 180, 270)
+  - Note: 90° and 270° are only supported on USB cameras (not Pi CSI cameras)
 - `res_width` / `res_height`: Video resolution
 - `bitrate`: Video bitrate in kbps
 - `fps`: Recording framerate
 - `mjpeg_quality`: MJPEG quality (2-31, lower = better quality)
   - Recommended: 5-8 (balanced), 2-4 (high quality), 10+ (low quality/storage)
 - `embed_timestamp`: Overlay timestamp (format: YYYY-MM-DD HH:MM:SS UTC)
+  - Note: Only supported on USB cameras (not Pi CSI cameras)
 - `enabled`: Whether this camera is active
 
 ### Legacy Configuration
