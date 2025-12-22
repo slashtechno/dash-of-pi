@@ -170,6 +170,7 @@ ls ~/.local/state/dash-of-pi/videos/
 # Make sure that the resolution and FPS that are set in the config are supported by the camera:
 rpicam-still --list-cameras
 sudo cat /etc/dash-of-pi/config.json | grep -e "res_" -e "fps"
+# Still doesn't work? Plug out the camera, reboot, plug it back in, and reboot again. Why does it work? No idea.
 ```
 
 **Go build killed on low-RAM Pis:**

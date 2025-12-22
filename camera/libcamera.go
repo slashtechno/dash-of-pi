@@ -72,13 +72,19 @@ func (c *Camera) recordAndStreamSegmentLibcamera(filename string) error {
 		"--width", fmt.Sprintf("%d", c.camConfig.ResWidth),
 		"--height", fmt.Sprintf("%d", c.camConfig.ResHeight),
 		"--framerate", fmt.Sprintf("%d", c.camConfig.FPS),
-		"--inline",           // include headers in stream
-		"--codec", "mjpeg",   // output MJPEG
-		"-o", filename,       // output file
+		"--inline",         // include headers in stream
+		"--codec", "mjpeg", // output MJPEG
+		"-o", filename, // output file
 	}
 
 	if c.camConfig.Rotation != 0 {
-		args = append(args, "--rotation", fmt.Sprintf("%d", c.camConfig.Rotation))
+		// rpicam-vid MJPEG encoder does not support 90/270 degree rotation (transpose)
+		// See: https://github.com/raspberrypi/rpicam-apps/issues/505
+		if c.camConfig.Rotation == 90 || c.camConfig.Rotation == 270 {
+			c.logger.Printf("[WARN] Camera '%s': Rotation %d is not supported by rpicam-vid MJPEG encoder. Ignoring rotation to prevent crash.", c.camConfig.Name, c.camConfig.Rotation)
+		} else {
+			args = append(args, "--rotation", fmt.Sprintf("%d", c.camConfig.Rotation))
+		}
 	}
 
 	recordCmd := exec.Command("rpicam-vid", args...)
