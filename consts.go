@@ -73,8 +73,8 @@ const (
 	DefaultStorageCapGB   = 10
 	DefaultVideoBitrate   = 1024 // kbps
 	DefaultVideoFPS       = 30
-	DefaultVideoWidth     = 1920
-	DefaultVideoHeight    = 1080
+	DefaultVideoWidth     = 1640
+	DefaultVideoHeight    = 1232
 	DefaultRotation       = 0    // Might change later if the my STL case has a rotated camera mount
 	DefaultSegmentLengthS = 60   // seconds
 	DefaultMJPEGQuality   = 8    // 2-31 scale, lower is better, 8=good balance
