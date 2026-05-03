@@ -265,8 +265,14 @@ async function remuxSegment(cameraId, filename) {
 		}
 		const data = await response.json();
 		const mp4Name = data.filename || filename.replace(/\.mjpeg$/i, '.mp4');
-		triggerDownload(`/api/video/remux/download?token=${authToken}&file=${encodeURIComponent(mp4Name)}`, mp4Name);
+		
 		checkRemuxStatus();
+		
+		// Wait for remux to complete before downloading
+		await waitForRemuxCompletion(5 * 60 * 1000); // 5 minute timeout
+		
+		triggerDownload(`/api/video/remux/download?token=${authToken}&file=${encodeURIComponent(mp4Name)}`, mp4Name);
+		notify('Remux complete, download started', 'success');
 	} catch (err) {
 		notify(err.message || 'Failed to remux segment', 'error');
 	} finally {
@@ -275,6 +281,27 @@ async function remuxSegment(cameraId, filename) {
 			btn.textContent = 'Download MP4';
 		}
 	}
+}
+
+async function waitForRemuxCompletion(timeoutMs = 300000) {
+	const startTime = Date.now();
+	const pollInterval = 500; // Check every 500ms
+	
+	while (Date.now() - startTime < timeoutMs) {
+		try {
+			const r = await fetch(`/api/video/remux/status?token=${authToken}`);
+			if (r.ok) {
+				const data = await r.json();
+				if (data && data.available && !data.in_progress) {
+					return; // Remux complete
+				}
+			}
+		} catch (_) {}
+		
+		await new Promise(resolve => setTimeout(resolve, pollInterval));
+	}
+	
+	throw new Error('Remux timed out');
 }
 
 function triggerDownload(url, filename) {
