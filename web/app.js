@@ -209,12 +209,20 @@ async function loadCameras() {
 		renderCameraList(data.cameras);
 
 		const enabled = (data.cameras || []).filter(c => c.enabled);
+		const select = document.getElementById('streamCamera');
 		if (enabled.length > 0) {
-			const select = document.getElementById('streamCamera');
-			select.innerHTML = enabled.map(c => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('');
-			select.classList.toggle('hidden', enabled.length <= 1);
-			if (!streamCameraId) streamCameraId = enabled[0].id;
+			select.innerHTML = enabled.map(c => {
+				const label = c.name || c.id || 'Camera';
+				return `<option value="${esc(c.id)}">${esc(label)}</option>`;
+			}).join('');
+			if (!streamCameraId || !enabled.some(c => c.id === streamCameraId)) {
+				streamCameraId = enabled[0].id;
+			}
+			select.value = streamCameraId;
+		} else {
+			select.innerHTML = '';
 		}
+		select.classList.toggle('hidden', enabled.length <= 1);
 	} catch (_) {
 		document.getElementById('camerasList').innerHTML = '<div class="empty-state">Failed to load cameras</div>';
 	}
@@ -480,6 +488,7 @@ async function deleteExport() {
 // Init
 
 function startApp() {
+	setRange(activeRange);
 	loadStatus();
 	loadCameras().then(() => startStream());
 	checkExportStatus();
