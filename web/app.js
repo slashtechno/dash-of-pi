@@ -13,6 +13,7 @@ let editingCameraId = null;
 let activeRange = 'lifetime';
 let streamCameraId = null;
 let streamInterval = null;
+let segmentTimezone = localStorage.getItem('segmentTimezone') || 'local';
 
 // HTML escaping
 
@@ -115,6 +116,48 @@ function utcString(isoString) {
 	return new Date(isoString).toLocaleString('en-US', { timeZone: 'UTC', timeZoneName: 'short' });
 }
 
+function getLocalTimeZone() {
+	const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+	return tz || 'Local';
+}
+
+function formatTimestamp(isoString, mode) {
+	const date = new Date(isoString);
+	const options = mode === 'utc'
+		? { timeZone: 'UTC', timeZoneName: 'short' }
+		: { timeZoneName: 'short' };
+	return date.toLocaleString('en-US', options);
+}
+
+function formatTimeRange(startIso, endIso, mode) {
+	return `${formatTimestamp(startIso, mode)} to ${formatTimestamp(endIso, mode)}`;
+}
+
+function setSegmentTimezone(mode) {
+	segmentTimezone = mode;
+	localStorage.setItem('segmentTimezone', mode);
+	const label = document.getElementById('segmentTimezoneLabel');
+	const toggle = document.getElementById('segmentTimezoneToggle');
+	if (mode === 'utc') {
+		label.textContent = 'UTC';
+		toggle.textContent = `Use ${getLocalTimeZone()}`;
+	} else {
+		label.textContent = getLocalTimeZone();
+		toggle.textContent = 'Use UTC';
+	}
+}
+
+function toggleSegmentTimezone() {
+	setSegmentTimezone(segmentTimezone === 'utc' ? 'local' : 'utc');
+	const list = document.getElementById('videoList');
+	if (list && list.dataset.videos) {
+		try {
+			const videos = JSON.parse(list.dataset.videos);
+			renderVideoList(videos);
+		} catch (_) {}
+	}
+}
+
 // Status
 
 const appStartTime = Date.now();
@@ -145,6 +188,7 @@ async function loadStatus() {
 
 function renderVideoList(videos) {
 	const container = document.getElementById('videoList');
+	container.dataset.videos = JSON.stringify(videos || []);
 
 	if (!videos || videos.length === 0) {
 		container.innerHTML = '<div class="empty-state">No segments recorded yet</div>';
@@ -167,14 +211,21 @@ function renderVideoList(videos) {
 			parts.push(`<div class="video-group-header">${esc(cameraId)}</div>`);
 		}
 		for (const v of items) {
+			const startTime = v.start_time || v.mod_time;
+			const endTime = v.end_time || v.mod_time;
+			const timeRange = formatTimeRange(startTime, endTime, segmentTimezone);
 			// camera_id and name are user-controlled -> escape
 			parts.push(`
 				<div class="video-item">
 					<div class="video-info">
 						<div class="video-name">${esc(v.name)}</div>
-						<div class="video-meta">${formatBytes(v.size)} | ${formatDuration(v.duration)} | ${utcString(v.mod_time)}</div>
+						<div class="video-time">${esc(timeRange)}</div>
+						<div class="video-meta">${formatBytes(v.size)} | ${formatDuration(v.duration)} | ${esc(segmentTimezone === 'utc' ? 'UTC' : getLocalTimeZone())}</div>
 					</div>
-					<button data-camera="${esc(v.camera_id)}" data-file="${esc(v.name)}" class="dl-btn">Download</button>
+					<div class="video-actions">
+						<button data-camera="${esc(v.camera_id)}" data-file="${esc(v.name)}" class="dl-btn">Download MJPEG</button>
+						<button data-camera="${esc(v.camera_id)}" data-file="${esc(v.name)}" class="remux-btn btn-ghost">Download MP4</button>
+					</div>
 				</div>`);
 		}
 	}
@@ -185,6 +236,9 @@ function renderVideoList(videos) {
 	container.querySelectorAll('.dl-btn').forEach(btn => {
 		btn.addEventListener('click', () => downloadSegment(btn.dataset.camera, btn.dataset.file));
 	});
+	container.querySelectorAll('.remux-btn').forEach(btn => {
+		btn.addEventListener('click', () => remuxSegment(btn.dataset.camera, btn.dataset.file));
+	});
 }
 
 function downloadSegment(cameraId, filename) {
@@ -192,6 +246,35 @@ function downloadSegment(cameraId, filename) {
 		`/api/video/download?camera=${encodeURIComponent(cameraId)}&file=${encodeURIComponent(filename)}&token=${authToken}`,
 		filename
 	);
+}
+
+async function remuxSegment(cameraId, filename) {
+	const btn = document.querySelector(`.remux-btn[data-camera="${CSS.escape(cameraId)}"][data-file="${CSS.escape(filename)}"]`);
+	if (btn) {
+		btn.disabled = true;
+		btn.textContent = 'Remuxing...';
+	}
+
+	try {
+		const response = await fetch(
+			`/api/video/remux?camera=${encodeURIComponent(cameraId)}&file=${encodeURIComponent(filename)}&token=${authToken}`,
+			{ method: 'POST' }
+		);
+		if (!response.ok) {
+			throw new Error(`Remux failed: ${response.status} ${response.statusText}`);
+		}
+		const data = await response.json();
+		const mp4Name = data.filename || filename.replace(/\.mjpeg$/i, '.mp4');
+		triggerDownload(`/api/video/remux/download?token=${authToken}&file=${encodeURIComponent(mp4Name)}`, mp4Name);
+		checkRemuxStatus();
+	} catch (err) {
+		notify(err.message || 'Failed to remux segment', 'error');
+	} finally {
+		if (btn) {
+			btn.disabled = false;
+			btn.textContent = 'Download MP4';
+		}
+	}
 }
 
 function triggerDownload(url, filename) {
@@ -470,6 +553,38 @@ async function checkExportStatus() {
 	} catch (_) {}
 }
 
+async function checkRemuxStatus() {
+	try {
+		const r = await fetch(`/api/video/remux/status?token=${authToken}`);
+		if (!r.ok) return;
+		const data = await r.json();
+
+		const statusEl = document.getElementById('segmentRemuxStatus');
+		const labelEl = document.getElementById('segmentRemuxLabel');
+		const fillEl = document.getElementById('segmentRemuxFill');
+		const textEl = document.getElementById('segmentRemuxText');
+
+		if (data && data.in_progress) {
+			statusEl.classList.remove('hidden');
+			labelEl.textContent = 'Remuxing segment...';
+			textEl.textContent = data.progress || 'Working...';
+			fillEl.style.width = '60%';
+			return;
+		}
+
+		if (data && data.available) {
+			statusEl.classList.remove('hidden');
+			labelEl.textContent = 'Remux complete';
+			textEl.textContent = data.filename || 'Ready to download';
+			fillEl.style.width = '100%';
+			setTimeout(() => statusEl.classList.add('hidden'), 6000);
+			return;
+		}
+
+		statusEl.classList.add('hidden');
+	} catch (_) {}
+}
+
 function downloadExport() {
 	triggerDownload(`/api/videos/download-export?token=${authToken}`, 'dashcam_export.mp4');
 }
@@ -489,12 +604,15 @@ async function deleteExport() {
 
 function startApp() {
 	setRange(activeRange);
+	setSegmentTimezone(segmentTimezone);
 	loadStatus();
 	loadCameras().then(() => startStream());
 	checkExportStatus();
+	checkRemuxStatus();
 	setInterval(loadStatus, 5000);
 	setInterval(loadCameras, 30000);
 	setInterval(checkExportStatus, 3000);
+	setInterval(checkRemuxStatus, 3000);
 }
 
 if (!authToken) {

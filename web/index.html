@@ -107,6 +107,17 @@
 
 		<div class="section">
 			<div class="section-title">Recorded Segments</div>
+			<div id="segmentRemuxStatus" class="export-progress hidden">
+				<div class="export-progress-label" id="segmentRemuxLabel">Remuxing segment...</div>
+				<div class="progress-bar">
+					<div class="progress-bar-fill" id="segmentRemuxFill"></div>
+				</div>
+				<div class="export-progress-text" id="segmentRemuxText"></div>
+			</div>
+			<div class="segments-toolbar">
+				<div class="segments-hint">Times shown in <span id="segmentTimezoneLabel">local</span></div>
+				<button id="segmentTimezoneToggle" class="btn-secondary btn-sm" onclick="toggleSegmentTimezone()">Use UTC</button>
+			</div>
 			<div id="videoList" class="video-list">
 				<div class="loading">Loading...</div>
 			</div>

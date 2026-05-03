@@ -6,7 +6,6 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -196,10 +195,10 @@ func (s *APIServer) generateExportAsync(startTime, endTime time.Time) {
 	// Run ffmpeg at low CPU priority so SSH and other services remain responsive.
 	// -c:v copy remuxes MJPEG frames directly into the MP4 container -  no decoding or
 	// re-encoding, so the Pi's single core isn't saturated.
-	cmd := exec.Command(
-		"nice", "-n", "19",
+	cmd := lowPriorityCommand(
 		"ffmpeg",
 		"-y",
+		"-threads", "1",
 		"-loglevel", "error",
 		"-fflags", "+discardcorrupt",
 		"-err_detect", "ignore_err",

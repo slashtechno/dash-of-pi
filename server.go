@@ -20,6 +20,8 @@ type APIServer struct {
 	indexHTML     string
 	exportInfo    *ExportInfo
 	exportMutex   sync.RWMutex
+	remuxInfo     *RemuxInfo
+	remuxMutex    sync.RWMutex
 	configPath    string
 }
 
@@ -36,13 +38,25 @@ type ExportInfo struct {
 	ProcessedFiles int       `json:"processed_files"`
 }
 
+type RemuxInfo struct {
+	Filename   string    `json:"filename"`
+	SourceFile string    `json:"source_file"`
+	Size       int64     `json:"size"`
+	Available  bool      `json:"available"`
+	InProgress bool      `json:"in_progress"`
+	Progress   string    `json:"progress"`
+	UpdatedAt  time.Time `json:"updated_at"`
+}
+
 type VideoInfo struct {
-	Name     string    `json:"name"`
-	Path     string    `json:"path"`
-	Size     int64     `json:"size"`
-	ModTime  time.Time `json:"mod_time"`
-	Duration int       `json:"duration"`
-	CameraID string    `json:"camera_id"`
+	Name      string    `json:"name"`
+	Path      string    `json:"path"`
+	Size      int64     `json:"size"`
+	ModTime   time.Time `json:"mod_time"`
+	StartTime time.Time `json:"start_time"`
+	EndTime   time.Time `json:"end_time"`
+	Duration  int       `json:"duration"`
+	CameraID  string    `json:"camera_id"`
 }
 
 type StorageStats struct {
@@ -72,6 +86,7 @@ func NewAPIServer(config *Config, cameraManager *camera.CameraManager, storage *
 		logger:        logger,
 		auth:          auth,
 		exportInfo:    &ExportInfo{Available: false},
+		remuxInfo:     &RemuxInfo{Available: false},
 		configPath:    configPath,
 	}
 
@@ -111,6 +126,9 @@ func (s *APIServer) Start() error {
 	apiMux.HandleFunc("/api/status", s.handleStatus)
 	apiMux.HandleFunc("/api/videos", s.handleListVideos)
 	apiMux.HandleFunc("/api/video/download", s.handleDownloadVideo)
+	apiMux.HandleFunc("/api/video/remux", s.handleRemuxSegment)
+	apiMux.HandleFunc("/api/video/remux/status", s.handleRemuxStatus)
+	apiMux.HandleFunc("/api/video/remux/download", s.handleDownloadRemux)
 	apiMux.HandleFunc("/api/video/latest", s.handleLatestVideo)
 	apiMux.HandleFunc("/api/videos/generate-export", s.handleGenerateExport)
 	apiMux.HandleFunc("/api/videos/export-status", s.handleExportStatus)
