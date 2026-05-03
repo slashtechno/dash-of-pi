@@ -63,26 +63,29 @@
 		<div class="section">
 			<div class="section-title">Export Video</div>
 
-			<div class="range-tabs">
-				<button id="lifetimeRangeBtn" class="range-tab active" onclick="setRange('lifetime')">Lifetime</button>
-				<button id="customRangeBtn" class="range-tab" onclick="setRange('custom')">Custom Range</button>
-			</div>
+			<div class="export-controls">
+				<div class="range-tabs">
+					<button id="lifetimeRangeBtn" class="range-tab active" onclick="setRange('lifetime')">Lifetime</button>
+					<button id="customRangeBtn" class="range-tab" onclick="setRange('custom')">Custom Range</button>
+				</div>
 
-			<div id="customDateForm" class="custom-date-form hidden">
-				<div class="form-row">
-					<div class="form-group">
-						<label>Start (UTC)</label>
-						<input type="datetime-local" id="startDate">
-					</div>
-					<div class="form-group">
-						<label>End (UTC)</label>
-						<input type="datetime-local" id="endDate">
+				<div id="customDateForm" class="custom-date-form hidden">
+					<div class="form-row">
+						<div class="form-group">
+							<label>Start (UTC)</label>
+							<input type="datetime-local" id="startDate">
+						</div>
+						<div class="form-group">
+							<label>End (UTC)</label>
+							<input type="datetime-local" id="endDate">
+						</div>
 					</div>
 				</div>
-			</div>
 
-			<div class="export-action">
-				<button id="serverExportBtn" onclick="generateVideo()">Generate Export</button>
+				<div class="export-action">
+					<button id="serverExportBtn" onclick="generateVideo()">Generate Export</button>
+					<span class="export-note">Starting a new export replaces this one.</span>
+				</div>
 			</div>
 
 			<div id="exportProgress" class="export-progress hidden">
@@ -99,7 +102,6 @@
 					<button class="btn-success" onclick="downloadExport()">Download</button>
 					<button class="btn-danger" onclick="deleteExport()">Delete</button>
 				</div>
-				<p class="export-note">Starting a new export replaces this one.</p>
 			</div>
 		</div>
 
