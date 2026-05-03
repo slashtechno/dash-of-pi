@@ -10,17 +10,17 @@ import (
 )
 
 type CameraConfig struct {
-	ID             string `json:"id"`              // Unique identifier (auto-generated if empty)
-	Name           string `json:"name"`            // User-friendly name (e.g., "Front", "Rear")
-	Device         string `json:"device"`          // e.g., /dev/video0, /dev/video1
-	Rotation       int    `json:"rotation"`        // 0, 90, 180, 270 degrees
-	ResWidth       int    `json:"res_width"`       // Video width
-	ResHeight      int    `json:"res_height"`      // Video height
-	Bitrate        int    `json:"bitrate"`         // in kbps
-	FPS            int    `json:"fps"`             // frames per second
+	ID             string `json:"id"`
+	Name           string `json:"name"`
+	Device         string `json:"device"`
+	Rotation       int    `json:"rotation"` // 0, 90, 180, 270 degrees
+	ResWidth       int    `json:"res_width"`
+	ResHeight      int    `json:"res_height"`
+	Bitrate        int    `json:"bitrate"` // kbps
+	FPS            int    `json:"fps"`
 	MJPEGQuality   int    `json:"mjpeg_quality"`   // 2-31, lower = higher quality
-	EmbedTimestamp bool   `json:"embed_timestamp"` // Whether to overlay timestamp on video
-	Enabled        bool   `json:"enabled"`         // Whether this camera is active
+	EmbedTimestamp bool   `json:"embed_timestamp"` // USB cameras only
+	Enabled        bool   `json:"enabled"`
 }
 
 type Config struct {

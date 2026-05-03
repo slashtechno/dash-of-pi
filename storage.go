@@ -250,23 +250,23 @@ func walkCameraVideos(videoDir string, filterFunc func(cameraDir, fileName strin
 	}
 
 	var videoPaths []string
-	
+
 	for _, entry := range entries {
 		if !entry.IsDir() {
 			continue
 		}
-		
+
 		// Skip special directories like .export and .temp_export_*
 		if entry.Name()[0] == '.' {
 			continue
 		}
-		
+
 		cameraDir := filepath.Join(videoDir, entry.Name())
 		cameraEntries, err := os.ReadDir(cameraDir)
 		if err != nil {
 			continue
 		}
-		
+
 		for _, videoEntry := range cameraEntries {
 			if videoEntry.IsDir() {
 				continue
@@ -285,6 +285,6 @@ func walkCameraVideos(videoDir string, filterFunc func(cameraDir, fileName strin
 			}
 		}
 	}
-	
+
 	return videoPaths, nil
 }

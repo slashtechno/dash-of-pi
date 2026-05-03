@@ -3,19 +3,12 @@ package main
 import (
 	"crypto/rand"
 	"encoding/base64"
-	"fmt"
 	"net/http"
 	"strings"
-
-	"github.com/golang-jwt/jwt/v5"
 )
 
 type AuthMiddleware struct {
 	secretKey string
-}
-
-type Claims struct {
-	jwt.RegisteredClaims
 }
 
 func generateToken() string {
@@ -25,25 +18,20 @@ func generateToken() string {
 }
 
 func NewAuthMiddleware(secretKey string) *AuthMiddleware {
-	return &AuthMiddleware{
-		secretKey: secretKey,
-	}
+	return &AuthMiddleware{secretKey: secretKey}
 }
 
-// Middleware to check auth token
+// Check validates the bearer token from the Authorization header or ?token= query param.
 func (am *AuthMiddleware) Check(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Skip auth for health check
 		if r.URL.Path == "/health" {
 			next.ServeHTTP(w, r)
 			return
 		}
 
-		// Get token from Authorization header or query param
 		var token string
 
-		authHeader := r.Header.Get("Authorization")
-		if authHeader != "" {
+		if authHeader := r.Header.Get("Authorization"); authHeader != "" {
 			parts := strings.Split(authHeader, " ")
 			if len(parts) == 2 && parts[0] == "Bearer" {
 				token = parts[1]
@@ -54,49 +42,11 @@ func (am *AuthMiddleware) Check(next http.Handler) http.Handler {
 			token = r.URL.Query().Get("token")
 		}
 
-		if token == "" {
+		if token == "" || token != am.secretKey {
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
-			return
-		}
-
-		// Verify token (simple bearer token for now)
-		if token != am.secretKey {
-			http.Error(w, "Invalid token", http.StatusUnauthorized)
 			return
 		}
 
 		next.ServeHTTP(w, r)
 	})
-}
-
-// Generate a JWT for WebSocket/streaming connections
-func (am *AuthMiddleware) GenerateStreamToken() (string, error) {
-	claims := Claims{
-		RegisteredClaims: jwt.RegisteredClaims{},
-	}
-
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	ss, err := token.SignedString([]byte(am.secretKey))
-	if err != nil {
-		return "", fmt.Errorf("failed to sign token: %w", err)
-	}
-
-	return ss, nil
-}
-
-// Verify JWT for streaming
-func (am *AuthMiddleware) VerifyStreamToken(tokenString string) error {
-	token, err := jwt.ParseWithClaims(tokenString, &Claims{}, func(token *jwt.Token) (interface{}, error) {
-		return []byte(am.secretKey), nil
-	})
-
-	if err != nil {
-		return fmt.Errorf("failed to parse token: %w", err)
-	}
-
-	if !token.Valid {
-		return fmt.Errorf("invalid token")
-	}
-
-	return nil
 }

@@ -3,19 +3,22 @@
 Headless dash cam for Raspberry Pi Zero 2W (but usable on other machines). Continuous video recording with web dashboard for downloads and live streaming. Most importantly, **footage is recoverable even if power loss occurs mid-recording**.
 
 ## Quick Start
-**Pi Setup:**
+
+**Raspberry Pi Setup (Recommended for Pi Zero 2W and other Pi models):**
 ```bash
+# SSH into your Pi (replace 'pi' with your username and hostname/IP)
 # ssh pi@raspberrypi.local
 git clone https://github.com/slashtechno/dash-of-pi && cd dash-of-pi
-docker-compose up -d
-# Open http://raspberrypi.local:8080 and use the auth token printed in the terminal
+sudo ./scripts/install.sh
+# Follow the installer prompts and reboot when prompted
+# Access at http://<your-pi-hostname-or-ip>:8080
 ```
 
-**Local Testing:**
+**Local Testing (macOS, Linux, or other machines):**
 ```bash
 git clone https://github.com/slashtechno/dash-of-pi && cd dash-of-pi
 go run .
-# Open http://localhost:8080  and use the auth token printed in the terminal
+# Open http://localhost:8080 and use the auth token printed in the terminal
 ```
 
 
@@ -28,7 +31,7 @@ go run .
 - Timestamps embedded on video (optional, per-camera)
 - On-demand video export with persistent storage
 - Authentication
-- Docker and Systemd options
+- Systemd service for reliable background operation
 - All times in UTC (noted in footer)
 - Organized video storage by camera (videos/front/, videos/rear/, etc.)
 
@@ -121,14 +124,14 @@ Config stored at `~/.config/dash-of-pi/config.json`. See `config.json.example` f
 - `name`: User-friendly camera name
 - `device`: Video input device (e.g., `/dev/video0`, `/dev/video1`)
 - `rotation`: Camera rotation in degrees (0, 90, 180, 270)
-  - Note: 90° and 270° are only supported on USB cameras (not Pi CSI cameras)
+ - Note: 90 deg and 270 deg are only supported on USB cameras (not Pi CSI cameras)
 - `res_width` / `res_height`: Video resolution
 - `bitrate`: Video bitrate in kbps
 - `fps`: Recording framerate
 - `mjpeg_quality`: MJPEG quality (2-31, lower = better quality)
-  - Recommended: 5-8 (balanced), 2-4 (high quality), 10+ (low quality/storage)
+ - Recommended: 5-8 (balanced), 2-4 (high quality), 10+ (low quality/storage)
 - `embed_timestamp`: Overlay timestamp (format: YYYY-MM-DD HH:MM:SS UTC)
-  - Note: Only supported on USB cameras (not Pi CSI cameras)
+ - Note: Only supported on USB cameras (not Pi CSI cameras)
 - `enabled`: Whether this camera is active
 
 ### Legacy Configuration
@@ -146,22 +149,18 @@ Restart service to apply config changes.
 ## Dashboard
 
 - **Generate Video Section:**
-  - **Lifetime:** Creates MP4 from all stored MJPEG files
-  - **Custom Date Range:** Creates MP4 from MJPEG files within specified dates (input times are in UTC)
-  - MP4 file is re-encoded during generation and saved for download
-  - Only one export is kept at a time (replaces previous export)
-  - Export can be downloaded multiple times until deleted or replaced
-  - All times displayed in UTC (noted in footer)
+ - **Lifetime:** Creates MP4 from all stored MJPEG files
+ - **Custom Date Range:** Creates MP4 from MJPEG files within specified dates (input times are in UTC)
+ - MP4 file is re-encoded during generation and saved for download
+ - Only one export is kept at a time (replaces previous export)
+ - Export can be downloaded multiple times until deleted or replaced
+ - All times displayed in UTC (noted in footer)
 - **Camera Editor:** Add, remove, or edit cameras (device, resolution, etc.) directly in the browser; changes persist to the config file and trigger a camera restart.
 
 ## Troubleshooting
 
 **Service won't start:**
 ```bash
-# Docker
-docker compose logs dash-of-pi
-
-# Systemd
 journalctl -u dash-of-pi -f
 ```
 
@@ -176,7 +175,7 @@ sudo cat /etc/dash-of-pi/config.json | grep -e "res_" -e "fps"
 ```
 
 **Go build killed on low-RAM Pis:**
-`./scripts/install.sh` automatically creates a temporary 1 GB swap file at `/var/swap-dash-of-pi-build` whenever the system reports less than ~900 MB of RAM so the Go compiler can finish. The swap file is removed after the build completes.
+`./scripts/install.sh` automatically creates a temporary 1 GB swap file at `/var/swap-dash-of-pi-build` whenever the system reports less than ~900 MB of RAM so the Go compiler can finish. The swap file is removed after the build completes.
 
 If you're running `go build` manually on a constrained device, enable swap before building and clean it up afterwards:
 ```bash
@@ -210,7 +209,7 @@ cat ~/.config/dash-of-pi/config.json | grep auth_token
 
 ## Raspberry Pi Camera Setup (IMX219)
 
-Dash of Pi automatically detects CSI cameras and uses the native libcamera stack (rpicam-vid) for capture—no configuration needed.
+Dash of Pi automatically detects CSI cameras and uses the native libcamera stack (rpicam-vid) for capture - no configuration needed.
 
 **Setup:**
 
@@ -226,7 +225,7 @@ Dash of Pi automatically detects CSI cameras and uses the native libcamera stack
    ```
 5. **Start Dash of Pi.** It will auto-detect the camera and begin recording.
 
-> Different sensor? Follow the [official docs](https://www.raspberrypi.com/documentation/accessories/camera.html) and open a PR with what worked—we'll gladly add it.
+> Different sensor? Follow the [official docs](https://www.raspberrypi.com/documentation/accessories/camera.html) and open a PR with what worked - we'll gladly add it.
 ## Deployment
 
-See docker-compose.yml or scripts/install.sh for systemd setup.
+Run `sudo ./scripts/install.sh` for a full automated setup on Raspberry Pi (or any Linux system). This installs dependencies, compiles the binary, creates a systemd service, and configures camera support. The installer handles everything needed for production deployment.

@@ -72,9 +72,9 @@ ffmpeg -y \
 if [ $? -eq 0 ]; then
     SIZE=$(du -h "$OUTPUT_FILE" | cut -f1)
     echo ""
-    echo "✓ Merge complete: $OUTPUT_FILE ($SIZE)"
+    echo "Merge complete: $OUTPUT_FILE ($SIZE)"
 else
     echo ""
-    echo "✗ Merge failed"
+    echo "Merge failed"
     exit 1
 fi

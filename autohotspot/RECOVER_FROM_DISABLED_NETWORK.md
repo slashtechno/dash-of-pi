@@ -141,10 +141,10 @@ cat "$ROOT/etc/hostapd/hostapd.conf" 2>&1 || echo "No hostapd config"
 cd "$ROOT/etc/wpa_supplicant"
 if [ -f wpa_supplicant.conf.disabled ]; then
   sudo mv wpa_supplicant.conf.disabled wpa_supplicant.conf
-  echo "✓ Restored from .disabled"
+  echo "OK: Restored from .disabled"
 elif [ -f wpa_supplicant.conf.backup ]; then
   sudo mv wpa_supplicant.conf.backup wpa_supplicant.conf
-  echo "✓ Restored from .backup"
+  echo "OK: Restored from .backup"
 fi
 ```
 
@@ -154,14 +154,14 @@ fi
 sudo mkdir -p "$ROOT/etc/systemd/system/multi-user.target.wants"
 sudo ln -sf /lib/systemd/system/NetworkManager.service \
   "$ROOT/etc/systemd/system/multi-user.target.wants/NetworkManager.service"
-echo "✓ NetworkManager enabled"
+echo "OK: NetworkManager enabled"
 ```
 
 **Create state file for proper uninstall:**
 ```bash
 sudo mkdir -p "$ROOT/var/lib/autohotspot"
 echo "networkmanager_disabled=true" | sudo tee "$ROOT/var/lib/autohotspot/state"
-echo "✓ State file created"
+echo "OK: State file created"
 ```
 
 ### Step 7: Verify and unmount
@@ -169,15 +169,15 @@ echo "✓ State file created"
 ```bash
 # Verify fixes were applied
 echo "=== Verification ==="
-ls -la "$ROOT/etc/wpa_supplicant/wpa_supplicant.conf" 2>&1 && echo "✓ wpa_supplicant.conf exists" || echo "✗ Still missing"
-ls -la "$ROOT/etc/systemd/system/multi-user.target.wants/NetworkManager.service" 2>&1 && echo "✓ NetworkManager enabled" || echo "✗ Not enabled"
+ls -la "$ROOT/etc/wpa_supplicant/wpa_supplicant.conf" 2>&1 && echo "OK: wpa_supplicant.conf exists" || echo "FAIL: Still missing"
+ls -la "$ROOT/etc/systemd/system/multi-user.target.wants/NetworkManager.service" 2>&1 && echo "OK: NetworkManager enabled" || echo "FAIL: Not enabled"
 echo ""
 
 # Unmount safely (make sure you're not in the mount directory)
 cd ~
 sync
 sudo umount "$ROOT"
-echo "✓ Safe to remove SD card"
+echo "OK: Safe to remove SD card"
 ```
 
 ### Step 8: Boot and test

@@ -11,10 +11,10 @@ import (
 
 // CameraConfig represents the configuration for a single camera
 type CameraConfig struct {
-	ID        string `json:"id"`
-	Name      string `json:"name"`
-	Device    string `json:"device"`
-	Rotation  int    `json:"rotation"`
+	ID             string `json:"id"`
+	Name           string `json:"name"`
+	Device         string `json:"device"`
+	Rotation       int    `json:"rotation"`
 	ResWidth       int    `json:"res_width"`
 	ResHeight      int    `json:"res_height"`
 	Bitrate        int    `json:"bitrate"`
@@ -35,6 +35,7 @@ type Camera struct {
 	cmdMu         sync.Mutex
 	videoEncoder  string
 	segmentLength int
+	isCSI         bool // cached on startup; avoids shelling out rpicam-still every segment
 }
 
 // NewCamera creates a new camera instance
@@ -46,9 +47,13 @@ func NewCamera(config CameraConfig, segmentLength int, logger Logger) (*Camera, 
 		segmentLength: segmentLength,
 	}
 
-	// Detect available encoder on startup (for V4L2 cameras)
+	// Detect camera type and encoder once on startup rather than per-segment.
+	// IsCSICamera shells out to rpicam-still, which is slow and may conflict
+	// with an active rpicam-vid process if called during recording.
+	camera.isCSI = IsCSICamera(logger)
 	camera.videoEncoder = detectVideoEncoder(logger)
-	if IsCSICamera(logger) {
+
+	if camera.isCSI {
 		logger.Printf("Camera '%s' (%s): Using libcamera (rpicam-vid) for CSI camera", config.Name, config.ID)
 	} else {
 		logger.Printf("Camera '%s' (%s): Using video encoder: %s", config.Name, config.ID, camera.videoEncoder)
@@ -90,9 +95,8 @@ func (c *Camera) Start(videoDir string) error {
 
 		c.logger.Debugf("Camera '%s': Starting recording segment: %s", c.camConfig.Name, filepath.Base(filename))
 
-		// Use libcamera (rpicam-vid) for CSI cameras, FFmpeg for V4L2
 		var err error
-		if IsCSICamera(c.logger) {
+		if c.isCSI {
 			err = c.recordAndStreamSegmentLibcamera(filename)
 		} else {
 			err = c.recordAndStreamSegment(filename)

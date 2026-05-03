@@ -69,6 +69,7 @@ func (c *Camera) recordAndStreamSegment(filename string) error {
 
 		videoFilters = append(videoFilters, timestampFilter)
 	}
+
 	if len(videoFilters) > 0 {
 		args = append(args, "-vf", strings.Join(videoFilters, ","))
 	}

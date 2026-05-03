@@ -4,12 +4,12 @@ Automatically switches between multiple WiFi networks and hotspot mode. Supports
 
 ## Features
 
-- ✅ Multiple WiFi networks (tries in order)
-- ✅ Standard WiFi with password
-- ✅ Enterprise WiFi with username/password (PEAP/MSCHAPv2)
-- ✅ Auto-fallback to hotspot when no network available
-- ✅ Continuous connection monitoring
-- ✅ Auto-reconnect when networks become available
+- Multiple WiFi networks (tries in order)
+- Standard WiFi with password
+- Enterprise WiFi with username/password (PEAP/MSCHAPv2)
+- Auto-fallback to hotspot when no network available
+- Continuous connection monitoring
+- Auto-reconnect when networks become available
 
 ## Quick Start
 
@@ -152,9 +152,9 @@ Created when no configured networks are available.
 1. Scan for all configured networks
 2. Try to connect (first network = highest priority)
 3. Monitor connection every 30 seconds
-4. If connection fails → try next network
-5. If no networks available → create hotspot
-6. In hotspot mode → scan for networks every 30s
+4. If connection fails -> try next network
+5. If no networks available -> create hotspot
+6. In hotspot mode -> scan for networks every 30s
 ```
 
 ## Usage
@@ -244,18 +244,10 @@ sudo reboot
 
 - **Authentication**: WPA-PSK (password) and WPA-EAP (PEAP/MSCHAPv2)
 - **Monitoring**: Connection checked every 30 seconds
-- **Failover**: 3 failed checks → reconnect
+- **Failover**: 3 failed checks -> reconnect
 - **Hotspot IP**: 192.168.4.1/24
 - **Dependencies**: hostapd, dnsmasq, jq, iw
 
-## Common Use Cases
-
-**University Student**: Home WiFi + campus WiFi (enterprise) + hotspot fallback
-
-**Mobile Professional**: Home + office (enterprise) + coffee shops + hotspot
-
-**Multi-Location**: Multiple home/work locations, auto-connect wherever you are
-
 ---
 
-**Part of dash-of-pi dashcam project**
+Part of [dash-of-pi](https://github.com/slashtechno/dash-of-pi).

@@ -3,38 +3,36 @@
 <head>
 	<meta charset="UTF-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
-	<title>A Dash of Pi</title>
+	<title>Dash of Pi</title>
 	<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%234ade80'%3E%3Cpath d='M24 5.25v13a.75.75 0 0 1-1.136.643L16.5 15.075v2.175A1.75 1.75 0 0 1 14.75 19h-13A1.75 1.75 0 0 1 0 17.25v-11C0 5.284.784 4.5 1.75 4.5h13c.966 0 1.75.784 1.75 1.75v2.175l6.364-3.818A.75.75 0 0 1 24 5.25Zm-9 1a.25.25 0 0 0-.25-.25h-13a.25.25 0 0 0-.25.25v11c0 .138.112.25.25.25h13a.25.25 0 0 0 .25-.25v-11Zm1.5 7.075 6 3.6V6.575l-6 3.6Z'/%3E%3C/svg%3E">
 	<link rel="stylesheet" href="/web/style.css">
 </head>
 <body>
+	<div id="toastContainer" class="toast-container"></div>
+
 	<div class="container">
 		<header>
-			<h1>📹 A Dash of Pi</h1>
+			<h1>Dash of Pi</h1>
 			<div class="status-badge">
 				<span class="status-dot"></span>
-				<span id="statusText">Initializing...</span>
+				<span id="statusText">Connecting...</span>
 			</div>
 		</header>
-
-		<div id="errorBox"></div>
 
 		<div class="stats-grid">
 			<div class="stat-card">
 				<div class="stat-label">Storage Used</div>
-				<div class="stat-value" id="storageUsed">-- GB</div>
+				<div class="stat-value" id="storageUsed">--</div>
 				<div class="storage-bar">
-					<div class="storage-fill" id="storageFill" style="width: 0%"></div>
+					<div class="storage-fill" id="storageFill"></div>
 				</div>
-				<div class="storage-text" id="storageText">-- GB / -- GB</div>
+				<div class="storage-text" id="storageText">-- / --</div>
 			</div>
-
 			<div class="stat-card">
-				<div class="stat-label">Videos Recorded</div>
+				<div class="stat-label">Segments</div>
 				<div class="stat-value" id="videoCount">0</div>
-				<div class="storage-text">Total videos stored</div>
+				<div class="storage-text">MJPEG files stored</div>
 			</div>
-
 			<div class="stat-card">
 				<div class="stat-label">Uptime</div>
 				<div class="stat-value" id="uptime">--</div>
@@ -43,73 +41,81 @@
 		</div>
 
 		<div class="section">
-			<div class="section-title">Live Stream</div>
+			<div class="section-header">
+				<div class="section-title">Live Stream</div>
+				<select id="streamCamera" class="camera-select hidden" onchange="switchStreamCamera()"></select>
+			</div>
 			<div class="player-container" id="playerContainer">
 				<p class="empty-state">Loading stream...</p>
 			</div>
 		</div>
 
 		<div class="section">
-			<div class="section-title">Cameras</div>
+			<div class="section-header">
+				<div class="section-title">Cameras</div>
+				<button class="btn-sm" onclick="openAddCameraModal()">+ Add Camera</button>
+			</div>
 			<div id="camerasList" class="cameras-list">
 				<div class="loading">Loading cameras...</div>
 			</div>
-			<button onclick="openAddCameraModal()" style="margin-top: 15px; width: 100%;">➕ Add New Camera</button>
 		</div>
 
 		<div class="section">
-			<div class="section-title">Generate Video</div>
-			<div class="filter-controls">
-				<button id="lifetimeBtn" onclick="generateVideo('lifetime')" style="margin-right: 10px;">📹 Lifetime</button>
-				<button id="customBtn" onclick="toggleCustomDate()" style="margin-right: auto;">📅 Custom Date Range</button>
+			<div class="section-title">Export Video</div>
+
+			<div class="range-tabs">
+				<button id="lifetimeRangeBtn" class="range-tab active" onclick="setRange('lifetime')">Lifetime</button>
+				<button id="customRangeBtn" class="range-tab" onclick="setRange('custom')">Custom Range</button>
 			</div>
 
-			<div id="customDateForm" style="display: none; margin-bottom: 20px; padding: 15px; background: #1a1f26; border: 1px solid #333; border-radius: 6px;">
-				<div class="form-group">
-					<label>Start Date (UTC)</label>
-					<input type="datetime-local" id="startDate">
-				</div>
-				<div class="form-group">
-					<label>End Date (UTC)</label>
-					<input type="datetime-local" id="endDate">
-				</div>
-				<button id="generateCustomBtn" onclick="generateVideo('custom')" style="width: 100%;">Generate Video</button>
-			</div>
-
-			<!-- Export progress section -->
-			<div id="exportProgressSection" style="display: none; margin-top: 20px; padding: 15px; background: #1a3a52; border: 1px solid #3b82f6; border-radius: 6px;">
-				<div style="font-weight: 600; margin-bottom: 8px;">⏳ Generating Export...</div>
-				<div id="exportProgressText" style="font-size: 14px; color: #a0a0a0; margin-bottom: 10px;"></div>
-				<div style="font-size: 12px; color: #888;">This may take several minutes. Check server logs for detailed progress.</div>
-			</div>
-
-			<!-- Export availability section -->
-			<div id="exportSection" style="display: none; margin-top: 20px; padding: 15px; background: #1a4d2e; border: 1px solid #4ade80; border-radius: 6px;">
-				<div style="display: flex; justify-content: space-between; align-items: start;">
-					<div>
-						<div style="font-weight: 600; margin-bottom: 5px;">✅ Export Ready</div>
-						<div id="exportInfo" style="font-size: 14px; color: #a0a0a0; margin-bottom: 10px;"></div>
-						<div style="font-size: 12px; color: #888; margin-top: 5px;">⚠️ Note: Starting a new export will delete this one</div>
+			<div id="customDateForm" class="custom-date-form hidden">
+				<div class="form-row">
+					<div class="form-group">
+						<label>Start (UTC)</label>
+						<input type="datetime-local" id="startDate">
 					</div>
-					<button onclick="deleteExport()" style="background: #dc2626; padding: 6px 12px; font-size: 14px;">🗑️ Delete</button>
+					<div class="form-group">
+						<label>End (UTC)</label>
+						<input type="datetime-local" id="endDate">
+					</div>
 				</div>
-				<button onclick="downloadExport()" style="width: 100%; background: #4ade80; color: #0f1419; font-weight: 600;">⬇️ Download Export</button>
+			</div>
+
+			<div class="export-action">
+				<button id="serverExportBtn" onclick="generateVideo()">Generate Export</button>
+			</div>
+
+			<div id="exportProgress" class="export-progress hidden">
+				<div class="export-progress-label" id="exportProgressLabel"></div>
+				<div class="progress-bar">
+					<div class="progress-bar-fill" id="exportProgressFill"></div>
+				</div>
+				<div class="export-progress-text" id="exportProgressText"></div>
+			</div>
+
+			<div id="exportDownload" class="export-download hidden">
+				<div class="export-download-info" id="exportDownloadInfo"></div>
+				<div class="export-download-actions">
+					<button class="btn-success" onclick="downloadExport()">Download</button>
+					<button class="btn-danger" onclick="deleteExport()">Delete</button>
+				</div>
+				<p class="export-note">Starting a new export replaces this one.</p>
 			</div>
 		</div>
 
 		<div class="section">
-			<div class="section-title">Recent Videos</div>
+			<div class="section-title">Recorded Segments</div>
 			<div id="videoList" class="video-list">
-				<div class="loading">Loading videos...</div>
+				<div class="loading">Loading...</div>
 			</div>
 		</div>
 
 		<footer class="footer">
 			<div class="footer-content">
-				<span>🕐 All times displayed in UTC</span>
-				<span>•</span>
+				<span>All times in UTC</span>
+				<span>|</span>
 				<a href="https://github.com/slashtechno/dash-of-pi" target="_blank" rel="noopener noreferrer">
-					<svg style="width: 16px; height: 16px; vertical-align: middle; margin-right: 4px;" fill="currentColor" viewBox="0 0 24 24">
+					<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
 						<path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
 					</svg>
 					GitHub
@@ -118,80 +124,88 @@
 		</footer>
 	</div>
 
-	<div class="auth-modal" id="authModal">
-		<div class="auth-form">
-			<h2>🔐 Authentication Required</h2>
-			<p>Please enter your authentication token</p>
-			<input type="password" id="authInput" placeholder="Enter token" onkeypress="if(event.key==='Enter')authenticate()">
-			<button onclick="authenticate()">Login</button>
-			<div id="authError" style="color: #ef4444; margin-top: 10px; display: none;"></div>
+	<!-- Auth modal -->
+	<div class="modal" id="authModal">
+		<div class="modal-box auth-box">
+			<h2>Authentication</h2>
+			<p>Enter your auth token to continue.</p>
+			<input type="password" id="authInput" placeholder="Token" onkeypress="if(event.key==='Enter')authenticate()">
+			<button onclick="authenticate()">Sign in</button>
+			<div id="authError" class="auth-error hidden"></div>
 		</div>
 	</div>
 
-	<!-- Add/Edit Camera Modal -->
+	<!-- Add/Edit Camera modal -->
 	<div class="modal" id="cameraModal">
-		<div class="modal-content">
+		<div class="modal-box">
 			<div class="modal-header">
-				<h2 id="cameraModalTitle">Add New Camera</h2>
-				<button class="modal-close" onclick="closeCameraModal()">×</button>
+				<h2 id="cameraModalTitle">Add Camera</h2>
+				<button class="modal-close" onclick="closeCameraModal()">X</button>
 			</div>
 			<div class="modal-body">
 				<div class="form-group">
 					<label>Camera ID</label>
-					<input type="text" id="cameraId" placeholder="e.g., front, rear, left" disabled>
-					<small>Generated automatically for new cameras</small>
+					<input type="text" id="cameraId" disabled>
+					<small>Auto-generated for new cameras</small>
 				</div>
 				<div class="form-group">
-					<label>Camera Name *</label>
-					<input type="text" id="cameraName" placeholder="e.g., Front Camera, Rear Camera">
+					<label>Name *</label>
+					<input type="text" id="cameraName" placeholder="Front Camera">
 				</div>
-			<div class="form-group">
-				<label>Device Path *</label>
-				<input type="text" id="cameraDevice" placeholder="/dev/video0">
-			</div>
-			<div class="form-group">
-				<label>Rotation</label>
+				<div class="form-group">
+					<label>Device *</label>
+					<input type="text" id="cameraDevice" placeholder="/dev/video0">
+				</div>
+				<div class="form-group">
+					<label>Rotation</label>
 					<select id="cameraRotation">
-						<option value="0">0° (No rotation)</option>
-						<option value="90">90° (Clockwise) - USB Only</option>
-						<option value="180">180° (Upside down)</option>
-						<option value="270">270° (Counter-clockwise) - USB Only</option>
+						<option value="0">0 deg</option>
+						<option value="90">90 deg clockwise - USB only</option>
+						<option value="180">180 deg</option>
+						<option value="270">270 deg - USB only</option>
 					</select>
-					<small style="color: #f59e0b; display: block; margin-top: 4px;">Note: 90° and 270° rotation are not supported on Raspberry Pi CSI cameras.</small>
 				</div>
-				<div class="form-group">
-					<label>Width (pixels)</label>
-					<input type="number" id="cameraResWidth" value="1920">
+				<div class="form-row">
+					<div class="form-group">
+						<label>Width</label>
+						<input type="number" id="cameraResWidth" value="1920">
+					</div>
+					<div class="form-group">
+						<label>Height</label>
+						<input type="number" id="cameraResHeight" value="1080">
+					</div>
 				</div>
-				<div class="form-group">
-					<label>Height (pixels)</label>
-					<input type="number" id="cameraResHeight" value="1080">
-				</div>
-				<div class="form-group">
-					<label>Bitrate (kbps)</label>
-					<input type="number" id="cameraBitrate" value="2048">
-				</div>
-				<div class="form-group">
-					<label>FPS</label>
-					<input type="number" id="cameraFPS" value="30">
+				<div class="form-row">
+					<div class="form-group">
+						<label>Bitrate (kbps)</label>
+						<input type="number" id="cameraBitrate" value="2048">
+					</div>
+					<div class="form-group">
+						<label>FPS</label>
+						<input type="number" id="cameraFPS" value="30">
+					</div>
 				</div>
 				<div class="form-group">
 					<label>MJPEG Quality (2-31, lower = better)</label>
 					<input type="number" id="cameraMJPEGQuality" value="5" min="2" max="31">
 				</div>
-				<div class="form-group checkbox">
-					<input type="checkbox" id="cameraEmbedTimestamp" checked>
-					<label for="cameraEmbedTimestamp">Embed timestamp on video</label>
-					<small style="color: #f59e0b; display: block; margin-left: 24px; margin-top: 4px;">Not supported on Raspberry Pi CSI cameras</small>
+				<div class="form-group checkbox-group">
+					<label class="checkbox-label">
+						<input type="checkbox" id="cameraEmbedTimestamp" checked>
+						Embed UTC timestamp
+					</label>
+					<small>USB cameras only</small>
 				</div>
-				<div class="form-group checkbox">
-					<input type="checkbox" id="cameraEnabled" checked>
-					<label for="cameraEnabled">Enable camera</label>
+				<div class="form-group checkbox-group">
+					<label class="checkbox-label">
+						<input type="checkbox" id="cameraEnabled" checked>
+						Enabled
+					</label>
 				</div>
 			</div>
 			<div class="modal-footer">
-				<button onclick="closeCameraModal()" class="btn-secondary">Cancel</button>
-				<button onclick="saveCameraConfig()" class="btn-primary">Save Camera</button>
+				<button class="btn-secondary" onclick="closeCameraModal()">Cancel</button>
+				<button class="btn-primary" onclick="saveCameraConfig()">Save</button>
 			</div>
 		</div>
 	</div>

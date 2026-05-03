@@ -1,33 +1,51 @@
+// Auth
+
 let authToken = localStorage.getItem('authToken');
 
-// Check for token in URL to allow auto-login
 const urlParams = new URLSearchParams(window.location.search);
 if (urlParams.has('token')) {
 	authToken = urlParams.get('token');
 	localStorage.setItem('authToken', authToken);
-	// Remove token from URL to keep it clean
 	window.history.replaceState({}, document.title, window.location.pathname);
 }
 
-let startTime = Date.now();
 let editingCameraId = null;
+let activeRange = 'lifetime';
+let streamCameraId = null;
+let streamInterval = null;
 
-function showError(msg) {
-	const errorBox = document.getElementById('errorBox');
-	errorBox.innerHTML = '<div class="error-box">' + msg + '<span class="error-close" onclick="hideError()">×</span></div>';
+// HTML escaping
+
+// Escape user-controlled strings before placing them in innerHTML.
+function esc(val) {
+	return String(val)
+		.replace(/&/g, '&amp;')
+		.replace(/</g, '&lt;')
+		.replace(/>/g, '&gt;')
+		.replace(/"/g, '&quot;')
+		.replace(/'/g, '&#39;');
 }
 
-function hideError() {
-	document.getElementById('errorBox').innerHTML = '';
+// Notifications
+
+function notify(message, type = 'info') {
+	const container = document.getElementById('toastContainer');
+	const toast = document.createElement('div');
+	toast.className = `toast toast-${type}`;
+	toast.textContent = message; // textContent is safe
+	container.appendChild(toast);
+	setTimeout(() => toast.remove(), type === 'error' ? 6000 : 4000);
 }
+
+// API
 
 async function apiCall(url, options = {}) {
 	const response = await fetch(url, {
 		...options,
 		headers: {
 			'Authorization': 'Bearer ' + authToken,
-			...options.headers
-		}
+			...options.headers,
+		},
 	});
 
 	if (response.status === 401) {
@@ -38,319 +56,238 @@ async function apiCall(url, options = {}) {
 	}
 
 	if (!response.ok) {
-		throw new Error('API call failed: ' + response.statusText);
+		throw new Error(`API error: ${response.status} ${response.statusText}`);
 	}
 
 	return response.json();
 }
 
-function authenticate() {
-	const token = document.getElementById('authInput').value;
-	authToken = token;
-	localStorage.setItem('authToken', token);
+// Auth modal
 
-	// Test the token
-	fetch('/api/status', {
-		headers: { 'Authorization': 'Bearer ' + token }
-	})
-	.then(response => {
-		if (response.ok) {
-			document.getElementById('authModal').classList.remove('active');
-			document.getElementById('authError').style.display = 'none';
-			loadStatus();
-			loadStream();
-			loadCameras();
-			checkExportStatus();
-			setInterval(loadStatus, 5000);
-			setInterval(loadCameras, 30000);
-			// Check export status more frequently (every 3 seconds to catch progress updates)
-			setInterval(checkExportStatus, 3000);
-		} else {
-			document.getElementById('authError').textContent = 'Invalid token';
-			document.getElementById('authError').style.display = 'block';
-		}
-	});
+function authenticate() {
+	const token = document.getElementById('authInput').value.trim();
+	if (!token) return;
+
+	fetch('/api/status', { headers: { 'Authorization': 'Bearer ' + token } })
+		.then(r => {
+			if (r.ok) {
+				authToken = token;
+				localStorage.setItem('authToken', token);
+				document.getElementById('authModal').classList.remove('active');
+				document.getElementById('authError').classList.add('hidden');
+				startApp();
+			} else {
+				document.getElementById('authError').textContent = 'Invalid token';
+				document.getElementById('authError').classList.remove('hidden');
+			}
+		});
+}
+
+// Formatting
+
+function formatUptime(ms) {
+	const s = Math.floor(ms / 1000);
+	const m = Math.floor(s / 60);
+	const h = Math.floor(m / 60);
+	const d = Math.floor(h / 24);
+	if (d > 0) return `${d}d ${h % 24}h`;
+	if (h > 0) return `${h}h ${m % 60}m`;
+	if (m > 0) return `${m}m ${s % 60}s`;
+	return `${s}s`;
 }
 
 function formatDuration(seconds) {
-	const hours = Math.floor(seconds / 3600);
-	const minutes = Math.floor((seconds % 3600) / 60);
-	const secs = seconds % 60;
-	
-	if (hours > 0) {
-		return hours + 'h ' + minutes + 'm ' + secs + 's';
-	} else if (minutes > 0) {
-		return minutes + 'm ' + secs + 's';
-	} else {
-		return secs + 's';
-	}
+	const h = Math.floor(seconds / 3600);
+	const m = Math.floor((seconds % 3600) / 60);
+	const s = seconds % 60;
+	if (h > 0) return `${h}h ${m}m`;
+	if (m > 0) return `${m}m ${s}s`;
+	return `${s}s`;
 }
 
-function formatUptime(ms) {
-	const seconds = Math.floor(ms / 1000);
-	const minutes = Math.floor(seconds / 60);
-	const hours = Math.floor(minutes / 60);
-	const days = Math.floor(hours / 24);
-	
-	if (days > 0) {
-		return days + 'd ' + (hours % 24) + 'h';
-	} else if (hours > 0) {
-		return hours + 'h ' + (minutes % 60) + 'm';
-	} else if (minutes > 0) {
-		return minutes + 'm ' + (seconds % 60) + 's';
-	} else {
-		return seconds + 's';
-	}
+function formatBytes(bytes) {
+	if (bytes >= 1e9) return (bytes / 1e9).toFixed(2) + ' GB';
+	if (bytes >= 1e6) return (bytes / 1e6).toFixed(1) + ' MB';
+	return Math.round(bytes / 1e3) + ' KB';
 }
+
+function utcString(isoString) {
+	return new Date(isoString).toLocaleString('en-US', { timeZone: 'UTC', timeZoneName: 'short' });
+}
+
+// Status
+
+const appStartTime = Date.now();
 
 async function loadStatus() {
 	try {
 		const data = await apiCall('/api/status');
-		
-		document.getElementById('statusText').textContent = data.status === 'recording' ? 'Recording' : 'Offline';
-		
-		// Storage stats
-		const storagePercent = Math.round((data.storage.used_bytes / data.storage.cap_bytes) * 100);
+
+		document.getElementById('statusText').textContent =
+			data.status === 'recording' ? 'Recording' : 'Idle';
+
+		const pct = Math.round((data.storage.used_bytes / data.storage.cap_bytes) * 100);
 		document.getElementById('storageUsed').textContent = data.storage.used_gb.toFixed(2) + ' GB';
-		document.getElementById('storageFill').style.width = storagePercent + '%';
-		document.getElementById('storageText').textContent = 
-			data.storage.used_gb.toFixed(2) + ' GB / ' + data.storage.cap_gb + ' GB';
-		
-		// Video count
+		document.getElementById('storageFill').style.width = pct + '%';
+		document.getElementById('storageFill').className =
+			'storage-fill' + (pct > 90 ? ' storage-fill-warn' : '');
+		document.getElementById('storageText').textContent =
+			`${data.storage.used_gb.toFixed(2)} GB / ${data.storage.cap_gb} GB`;
+
 		document.getElementById('videoCount').textContent = data.videos.length;
-		
-		// Uptime
-		document.getElementById('uptime').textContent = formatUptime(Date.now() - startTime);
-		
-		// Load videos
-		loadVideos();
-	} catch (err) {
-		console.error('Failed to load status:', err);
-	}
+		document.getElementById('uptime').textContent = formatUptime(Date.now() - appStartTime);
+
+		renderVideoList(data.videos);
+	} catch (_) {}
 }
 
-function toggleCustomDate() {
-	const form = document.getElementById('customDateForm');
-	form.style.display = form.style.display === 'none' ? 'block' : 'none';
-}
+// Video list
 
-async function loadVideos() {
-	try {
-		const data = await apiCall('/api/videos');
-		const container = document.getElementById('videoList');
+function renderVideoList(videos) {
+	const container = document.getElementById('videoList');
 
-		if (!data.videos || data.videos.length === 0) {
-			container.innerHTML = '<div class="empty-state">No videos recorded yet</div>';
-			return;
-		}
-
-		container.innerHTML = data.videos.map(video => 
-			'<div class="video-item">' +
-			'<div class="video-info">' +
-			'<div class="video-name">' + video.name + '</div>' +
-			'<div class="video-meta">' +
-			(video.size / (1024 * 1024)).toFixed(2) + ' MB • ' + formatDuration(video.duration) + ' • ' +
-			new Date(video.mod_time).toLocaleString('en-US', { timeZone: 'UTC', timeZoneName: 'short' }) +
-			'</div>' +
-			'</div>' +
-			'<div class="video-actions">' +
-			'<button onclick="downloadVideo(\'' + video.name + '\')">Download</button>' +
-			'</div>' +
-			'</div>'
-		).join('');
-	} catch (err) {
-		console.error('Failed to load videos:', err);
-	}
-}
-
-async function checkExportStatus() {
-	try {
-		const response = await fetch('/api/videos/export-status?token=' + authToken);
-		if (response.ok) {
-			const data = await response.json();
-			const exportSection = document.getElementById('exportSection');
-			const progressSection = document.getElementById('exportProgressSection');
-			
-			if (data.in_progress) {
-				// Show progress, hide completed export
-				progressSection.style.display = 'block';
-				exportSection.style.display = 'none';
-				
-				let progressText = data.progress || 'Processing...';
-				
-				// Add file count if available (during copying phase)
-				if (data.processed_files > 0 && data.total_segments > 0 && data.current_size_mb === 0) {
-					progressText += ` (${data.processed_files}/${data.total_segments} files)`;
-				}
-				// During encoding, the progress message already includes size info, so don't duplicate
-				
-				document.getElementById('exportProgressText').textContent = progressText;
-			} else if (data.available) {
-				// Hide progress, show completed export
-				progressSection.style.display = 'none';
-				exportSection.style.display = 'block';
-				
-				const startDate = new Date(data.start_time).toISOString().replace('T', ' ').slice(0, 16);
-				const endDate = new Date(data.end_time).toISOString().replace('T', ' ').slice(0, 16);
-				const size = (data.size / (1024 * 1024)).toFixed(2);
-				document.getElementById('exportInfo').textContent = 
-					`${startDate} to ${endDate} UTC • ${size} MB`;
-			} else {
-				// Hide both sections
-				progressSection.style.display = 'none';
-				exportSection.style.display = 'none';
-			}
-		}
-	} catch (err) {
-		console.error('Failed to check export status:', err);
-	}
-}
-
-async function generateVideo(type) {
-	let startDate, endDate;
-	
-	if (type === 'lifetime') {
-		startDate = new Date(0).toISOString();
-		endDate = new Date().toISOString();
-		if (!confirm('⚠️ Lifetime video export may take a VERY long time (several minutes to hours depending on the amount of footage). The export will be available for download when complete. Continue?')) {
-			return;
-		}
-	} else if (type === 'custom') {
-		const startInput = document.getElementById('startDate').value;
-		const endInput = document.getElementById('endDate').value;
-		
-		if (!startInput || !endInput) {
-			showError('Please select both start and end dates');
-			return;
-		}
-		
-		// Treat input as UTC - append Z to force UTC interpretation
-		startDate = new Date(startInput + ':00Z').toISOString();
-		endDate = new Date(endInput + ':00Z').toISOString();		const daysDiff = (new Date(endDate) - new Date(startDate)) / (1000 * 60 * 60 * 24);
-		if (daysDiff > 1 && !confirm('⚠️ Video generation may take several minutes for large date ranges (' + Math.round(daysDiff) + ' days selected). The export will be available for download when complete. Continue?')) {
-			return;
-		}
-	}
-	
-	const btn = type === 'lifetime' ? document.getElementById('lifetimeBtn') : document.getElementById('generateCustomBtn');
-	btn.disabled = true;
-	const originalText = btn.textContent;
-	btn.textContent = '⏳ Generating...';
-	
-	try {
-		const response = await fetch(
-			'/api/videos/generate-export?start=' + encodeURIComponent(startDate) + 
-			'&end=' + encodeURIComponent(endDate) + '&token=' + authToken,
-			{ method: 'POST' }
-		);
-		
-		if (response.ok) {
-			showError('🎬 Video generation started! Progress will appear below.');
-			// Start checking for export immediately and more frequently
-			setTimeout(checkExportStatus, 1000);
-		} else {
-			const error = await response.text();
-			showError('Failed to generate video: ' + error);
-		}
-	} catch (err) {
-		showError('Failed to generate video: ' + err.message);
-	} finally {
-		btn.disabled = false;
-		btn.textContent = originalText;
-	}
-}
-
-function downloadExport() {
-	const url = '/api/videos/download-export?token=' + authToken;
-	const a = document.createElement('a');
-	a.href = url;
-	a.download = 'dashcam_export.mp4';
-	a.click();
-}
-
-async function deleteExport() {
-	if (!confirm('Are you sure you want to delete the current export?')) {
+	if (!videos || videos.length === 0) {
+		container.innerHTML = '<div class="empty-state">No segments recorded yet</div>';
 		return;
 	}
-	
-	try {
-		const response = await fetch('/api/videos/delete-export?token=' + authToken, {
-			method: 'DELETE'
-		});
-		
-		if (response.ok) {
-			checkExportStatus();
-		} else {
-			showError('Failed to delete export');
-		}
-	} catch (err) {
-		showError('Failed to delete export: ' + err.message);
+
+	// Group by camera when multiple cameras are configured
+	const groups = {};
+	for (const v of videos) {
+		const key = v.camera_id || 'default';
+		if (!groups[key]) groups[key] = [];
+		groups[key].push(v);
 	}
+
+	const multiCamera = Object.keys(groups).length > 1;
+	const parts = [];
+
+	for (const [cameraId, items] of Object.entries(groups)) {
+		if (multiCamera) {
+			parts.push(`<div class="video-group-header">${esc(cameraId)}</div>`);
+		}
+		for (const v of items) {
+			// camera_id and name are user-controlled -> escape
+			parts.push(`
+				<div class="video-item">
+					<div class="video-info">
+						<div class="video-name">${esc(v.name)}</div>
+						<div class="video-meta">${formatBytes(v.size)} | ${formatDuration(v.duration)} | ${utcString(v.mod_time)}</div>
+					</div>
+					<button data-camera="${esc(v.camera_id)}" data-file="${esc(v.name)}" class="dl-btn">Download</button>
+				</div>`);
+		}
+	}
+
+	container.innerHTML = parts.join('');
+
+	// Attach download handlers via data attributes to avoid inline event handlers
+	container.querySelectorAll('.dl-btn').forEach(btn => {
+		btn.addEventListener('click', () => downloadSegment(btn.dataset.camera, btn.dataset.file));
+	});
 }
 
-function downloadVideo(filename) {
-	const url = '/api/video/download?file=' + filename + '&token=' + authToken;
+function downloadSegment(cameraId, filename) {
+	triggerDownload(
+		`/api/video/download?camera=${encodeURIComponent(cameraId)}&file=${encodeURIComponent(filename)}&token=${authToken}`,
+		filename
+	);
+}
+
+function triggerDownload(url, filename) {
 	const a = document.createElement('a');
 	a.href = url;
 	a.download = filename;
 	a.click();
 }
 
+// Live stream
+
 async function loadCameras() {
 	try {
-		console.log('Loading cameras...');
 		const data = await apiCall('/api/cameras');
-		console.log('Cameras loaded:', data);
-		const container = document.getElementById('camerasList');
-		
-		if (!data.cameras || data.cameras.length === 0) {
-			container.innerHTML = '<div class="empty-state">No cameras configured</div>';
-			return;
+		renderCameraList(data.cameras);
+
+		const enabled = (data.cameras || []).filter(c => c.enabled);
+		if (enabled.length > 0) {
+			const select = document.getElementById('streamCamera');
+			select.innerHTML = enabled.map(c => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('');
+			select.classList.toggle('hidden', enabled.length <= 1);
+			if (!streamCameraId) streamCameraId = enabled[0].id;
 		}
-		
-		container.innerHTML = data.cameras.map(camera => {
-			const rotationLabel = {
-				0: '0°',
-				90: '90°',
-				180: '180°',
-				270: '270°'
-			}[camera.rotation] || camera.rotation + '°';
-			const pixelFormatLabel = (camera.pixel_format || 'auto').toUpperCase();
-			
-			return '<div class="camera-card">' +
-				'<div class="camera-header">' +
-				'<div class="camera-info">' +
-				'<div class="camera-name">' + camera.name + '</div>' +
-				'<div class="camera-meta">' +
-				'ID: ' + camera.id + ' • ' + camera.res_width + 'x' + camera.res_height + ' • ' +
-				'Rotation: ' + rotationLabel +
-				'</div>' +
-				'<div class="camera-device">' + camera.device + '</div>' +
-				'</div>' +
-				'<div class="camera-status" style="' + (camera.enabled ? 'background: #4ade80' : 'background: #666') + '">' +
-				(camera.enabled ? '✓ Active' : '○ Disabled') +
-				'</div>' +
-				'</div>' +
-				'<div class="camera-actions">' +
-				'<button onclick="editCamera(\'' + camera.id + '\')">Edit</button>' +
-				'<button onclick="deleteCamera(\'' + camera.id + '\')" style="background: #dc2626;">Delete</button>' +
-				'</div>' +
-				'</div>';
-		}).join('');
-	} catch (err) {
-		console.error('Failed to load cameras:', err);
-		const container = document.getElementById('camerasList');
-		container.innerHTML = '<div class="empty-state">Failed to load cameras</div>';
+	} catch (_) {
+		document.getElementById('camerasList').innerHTML = '<div class="empty-state">Failed to load cameras</div>';
 	}
+}
+
+function switchStreamCamera() {
+	streamCameraId = document.getElementById('streamCamera').value;
+}
+
+function startStream() {
+	const container = document.getElementById('playerContainer');
+	container.innerHTML = '<img id="liveStream" class="stream-viewer" alt="Live stream">';
+	const img = document.getElementById('liveStream');
+	let loading = false;
+
+	if (streamInterval) clearInterval(streamInterval);
+
+	streamInterval = setInterval(() => {
+		if (loading) return;
+		loading = true;
+		const cam = streamCameraId ? `&camera=${encodeURIComponent(streamCameraId)}` : '';
+		const next = new Image();
+		next.onload = () => { img.src = next.src; loading = false; };
+		next.onerror = () => { loading = false; };
+		next.src = `/api/stream/frame?token=${authToken}${cam}&t=${Date.now()}`;
+	}, 40);
+}
+
+// Camera management
+
+function renderCameraList(cameras) {
+	const container = document.getElementById('camerasList');
+
+	if (!cameras || cameras.length === 0) {
+		container.innerHTML = '<div class="empty-state">No cameras configured</div>';
+		return;
+	}
+
+	const parts = cameras.map(cam => `
+		<div class="camera-card">
+			<div class="camera-header">
+				<div class="camera-info">
+					<div class="camera-name">${esc(cam.name)}</div>
+					<div class="camera-meta">${cam.res_width}x${cam.res_height} | ${cam.fps} fps | ${cam.rotation} deg | ID: ${esc(cam.id)}</div>
+					<div class="camera-device">${esc(cam.device)}</div>
+				</div>
+				<span class="camera-status ${cam.enabled ? 'status-active' : 'status-inactive'}">
+					${cam.enabled ? 'Active' : 'Disabled'}
+				</span>
+			</div>
+			<div class="camera-actions">
+				<button data-action="edit" data-id="${esc(cam.id)}">Edit</button>
+				<button data-action="delete" data-id="${esc(cam.id)}" class="btn-danger-sm">Delete</button>
+			</div>
+		</div>
+	`);
+
+	container.innerHTML = parts.join('');
+
+	container.querySelectorAll('[data-action]').forEach(btn => {
+		btn.addEventListener('click', () => {
+			if (btn.dataset.action === 'edit') editCamera(btn.dataset.id);
+			else if (btn.dataset.action === 'delete') deleteCamera(btn.dataset.id);
+		});
+	});
 }
 
 function openAddCameraModal() {
 	editingCameraId = null;
-	document.getElementById('cameraModalTitle').textContent = 'Add New Camera';
-	document.getElementById('cameraId').value = '';
-	document.getElementById('cameraId').disabled = true;
-	document.getElementById('cameraName').value = '';
-	document.getElementById('cameraDevice').value = '';
+	document.getElementById('cameraModalTitle').textContent = 'Add Camera';
+	['cameraId', 'cameraName', 'cameraDevice'].forEach(id => {
+		document.getElementById(id).value = '';
+	});
 	document.getElementById('cameraRotation').value = '0';
 	document.getElementById('cameraResWidth').value = '1920';
 	document.getElementById('cameraResHeight').value = '1080';
@@ -365,31 +302,25 @@ function openAddCameraModal() {
 async function editCamera(cameraId) {
 	try {
 		const data = await apiCall('/api/cameras');
-		const camera = data.cameras.find(c => c.id === cameraId);
-		
-		if (!camera) {
-			showError('Camera not found');
-			return;
-		}
-		
+		const cam = data.cameras.find(c => c.id === cameraId);
+		if (!cam) { notify('Camera not found', 'error'); return; }
+
 		editingCameraId = cameraId;
 		document.getElementById('cameraModalTitle').textContent = 'Edit Camera';
-		document.getElementById('cameraId').value = camera.id;
-			document.getElementById('cameraId').disabled = true;
-			document.getElementById('cameraName').value = camera.name;
-			document.getElementById('cameraDevice').value = camera.device;
-			document.getElementById('cameraRotation').value = camera.rotation;
-		document.getElementById('cameraResWidth').value = camera.res_width;
-		document.getElementById('cameraResHeight').value = camera.res_height;
-		document.getElementById('cameraBitrate').value = camera.bitrate;
-		document.getElementById('cameraFPS').value = camera.fps;
-		document.getElementById('cameraMJPEGQuality').value = camera.mjpeg_quality;
-		document.getElementById('cameraEmbedTimestamp').checked = camera.embed_timestamp;
-		document.getElementById('cameraEnabled').checked = camera.enabled;
+		document.getElementById('cameraId').value = cam.id;
+		document.getElementById('cameraName').value = cam.name;
+		document.getElementById('cameraDevice').value = cam.device;
+		document.getElementById('cameraRotation').value = cam.rotation;
+		document.getElementById('cameraResWidth').value = cam.res_width;
+		document.getElementById('cameraResHeight').value = cam.res_height;
+		document.getElementById('cameraBitrate').value = cam.bitrate;
+		document.getElementById('cameraFPS').value = cam.fps;
+		document.getElementById('cameraMJPEGQuality').value = cam.mjpeg_quality;
+		document.getElementById('cameraEmbedTimestamp').checked = cam.embed_timestamp;
+		document.getElementById('cameraEnabled').checked = cam.enabled;
 		document.getElementById('cameraModal').classList.add('active');
 	} catch (err) {
-		console.error('Failed to edit camera:', err);
-		showError('Failed to load camera details');
+		notify('Failed to load camera: ' + err.message, 'error');
 	}
 }
 
@@ -398,17 +329,17 @@ function closeCameraModal() {
 }
 
 async function saveCameraConfig() {
-	const name = document.getElementById('cameraName').value;
-	const device = document.getElementById('cameraDevice').value;
-	
+	const name = document.getElementById('cameraName').value.trim();
+	const device = document.getElementById('cameraDevice').value.trim();
+
 	if (!name || !device) {
-		showError('Please fill in required fields (Name, Device)');
+		notify('Name and device are required', 'error');
 		return;
 	}
-	
-	const cameraData = {
-		name: name,
-		device: device,
+
+	const payload = {
+		name,
+		device,
 		rotation: parseInt(document.getElementById('cameraRotation').value),
 		res_width: parseInt(document.getElementById('cameraResWidth').value),
 		res_height: parseInt(document.getElementById('cameraResHeight').value),
@@ -416,92 +347,149 @@ async function saveCameraConfig() {
 		fps: parseInt(document.getElementById('cameraFPS').value),
 		mjpeg_quality: parseInt(document.getElementById('cameraMJPEGQuality').value),
 		embed_timestamp: document.getElementById('cameraEmbedTimestamp').checked,
-		enabled: document.getElementById('cameraEnabled').checked
+		enabled: document.getElementById('cameraEnabled').checked,
 	};
-	
+
 	try {
-		let url = '/api/cameras/add';
-		let method = 'POST';
-		
-		if (editingCameraId) {
-			url = '/api/cameras/update?id=' + encodeURIComponent(editingCameraId);
-			method = 'PUT';
-		}
-		
-		const response = await apiCall(url, {
-			method: method,
+		const url = editingCameraId
+			? `/api/cameras/update?id=${encodeURIComponent(editingCameraId)}`
+			: '/api/cameras/add';
+		await apiCall(url, {
+			method: editingCameraId ? 'PUT' : 'POST',
 			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify(cameraData)
+			body: JSON.stringify(payload),
 		});
-		
-		showError('✓ Camera ' + (editingCameraId ? 'updated' : 'added') + '. Changes applied.');
+		notify(`Camera ${editingCameraId ? 'updated' : 'added'}`, 'success');
 		closeCameraModal();
-		setTimeout(loadCameras, 1000);
+		setTimeout(loadCameras, 500);
 	} catch (err) {
-		showError('Failed to save camera: ' + err.message);
+		notify('Failed to save camera: ' + err.message, 'error');
 	}
 }
 
 async function deleteCamera(cameraId) {
-	if (!confirm('Are you sure you want to delete this camera? Restart required for changes.')) {
-		return;
-	}
-	
+	if (!confirm(`Delete camera "${cameraId}"?`)) return;
 	try {
-		await apiCall('/api/cameras/delete?id=' + encodeURIComponent(cameraId), {
-			method: 'DELETE'
-		});
-		
-		showError('✓ Camera deleted. Changes applied.');
+		await apiCall(`/api/cameras/delete?id=${encodeURIComponent(cameraId)}`, { method: 'DELETE' });
+		notify('Camera deleted', 'success');
 		loadCameras();
 	} catch (err) {
-		showError('Failed to delete camera: ' + err.message);
+		notify('Failed to delete: ' + err.message, 'error');
 	}
 }
 
-function loadStream() {
-	const container = document.getElementById('playerContainer');
-	
-	// Use polling for better browser compatibility
-	loadStreamPolling();
+// Export: date range
+
+function setRange(type) {
+	activeRange = type;
+	document.getElementById('lifetimeRangeBtn').classList.toggle('active', type === 'lifetime');
+	document.getElementById('customRangeBtn').classList.toggle('active', type === 'custom');
+	document.getElementById('customDateForm').classList.toggle('hidden', type === 'lifetime');
 }
 
-function loadStreamPolling() {
-	const container = document.getElementById('playerContainer');
-	container.innerHTML = '<img id="live-stream" class="stream-viewer" src="" alt="Live stream">';
-	
-	const img = document.getElementById('live-stream');
-	let isLoading = false;
-	
-	setInterval(() => {
-		if (isLoading) return;
-		isLoading = true;
-		
-		const now = Date.now();
-		const url = '/api/stream/frame?token=' + authToken + '&t=' + now;
-		
-		const newImg = new Image();
-		newImg.onload = function() {
-			img.src = this.src;
-			isLoading = false;
-		};
-		newImg.onerror = function() {
-			isLoading = false;
-		};
-		newImg.src = url;
-	}, 40);
+function getDateRange() {
+	if (activeRange === 'lifetime') {
+		return { start: new Date(0).toISOString(), end: new Date().toISOString() };
+	}
+
+	const startInput = document.getElementById('startDate').value;
+	const endInput = document.getElementById('endDate').value;
+	if (!startInput || !endInput) {
+		notify('Please select both start and end dates', 'error');
+		return null;
+	}
+
+	return {
+		start: new Date(startInput + ':00Z').toISOString(),
+		end: new Date(endInput + ':00Z').toISOString(),
+	};
 }
 
-// Initial load
-if (!authToken) {
-	document.getElementById('authModal').classList.add('active');
-} else {
+// Export: server-side
+
+async function generateVideo() {
+	const range = getDateRange();
+	if (!range) return;
+
+	const btn = document.getElementById('serverExportBtn');
+	btn.disabled = true;
+	btn.textContent = 'Starting...';
+
+	try {
+		await apiCall(
+			`/api/videos/generate-export?start=${encodeURIComponent(range.start)}&end=${encodeURIComponent(range.end)}`,
+			{ method: 'POST' }
+		);
+		notify('Export started on Pi', 'info');
+		setTimeout(checkExportStatus, 500);
+	} catch (err) {
+		notify('Failed to start export: ' + err.message, 'error');
+	} finally {
+		btn.disabled = false;
+		btn.textContent = 'Export';
+	}
+}
+
+async function checkExportStatus() {
+	try {
+		const r = await fetch(`/api/videos/export-status?token=${authToken}`);
+		if (!r.ok) return;
+		const data = await r.json();
+
+		const progressEl = document.getElementById('exportProgress');
+		const downloadEl = document.getElementById('exportDownload');
+
+		if (data.in_progress) {
+			progressEl.classList.remove('hidden');
+			downloadEl.classList.add('hidden');
+			document.getElementById('exportProgressLabel').textContent = 'Exporting on Pi...';
+			document.getElementById('exportProgressText').textContent = data.progress || 'Working...';
+			// Indeterminate progress during remux
+			const pct = data.current_size_mb > 0 ? Math.min(80, data.current_size_mb) : 20;
+			document.getElementById('exportProgressFill').style.width = pct + '%';
+		} else if (data.available) {
+			progressEl.classList.add('hidden');
+			downloadEl.classList.remove('hidden');
+			document.getElementById('exportProgressFill').style.width = '100%';
+
+			const sizeMB = (data.size / 1e6).toFixed(1);
+			document.getElementById('exportDownloadInfo').textContent =
+				`${utcString(data.start_time)} -> ${utcString(data.end_time)} | ${sizeMB} MB`;
+		} else {
+			progressEl.classList.add('hidden');
+			downloadEl.classList.add('hidden');
+		}
+	} catch (_) {}
+}
+
+function downloadExport() {
+	triggerDownload(`/api/videos/download-export?token=${authToken}`, 'dashcam_export.mp4');
+}
+
+async function deleteExport() {
+	if (!confirm('Delete the current export?')) return;
+	try {
+		await fetch(`/api/videos/delete-export?token=${authToken}`, { method: 'DELETE' });
+		checkExportStatus();
+		notify('Export deleted', 'success');
+	} catch (err) {
+		notify('Failed to delete export: ' + err.message, 'error');
+	}
+}
+
+// Init
+
+function startApp() {
 	loadStatus();
-	loadStream();
-	loadCameras();
+	loadCameras().then(() => startStream());
 	checkExportStatus();
 	setInterval(loadStatus, 5000);
 	setInterval(loadCameras, 30000);
-	// Check export status more frequently (every 3 seconds to catch progress updates)
 	setInterval(checkExportStatus, 3000);
+}
+
+if (!authToken) {
+	document.getElementById('authModal').classList.add('active');
+} else {
+	startApp();
 }
