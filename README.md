@@ -259,4 +259,22 @@ Dash of Pi automatically detects CSI cameras and uses the native libcamera stack
 > Different sensor? Follow the [official docs](https://www.raspberrypi.com/documentation/accessories/camera.html) and open a PR with what worked - we'll gladly add it.
 ## Deployment
 
-Run `sudo ./scripts/install.sh` for a full automated setup on Raspberry Pi (or any Linux system). This installs dependencies, compiles the binary, creates a systemd service, and configures camera support. The installer handles everything needed for production deployment.
+Run `sudo ./scripts/install.sh` for a full automated setup on Raspberry Pi (or any Linux system). This installs dependencies, compiles the binary, creates a systemd service, and configures camera support. The installer handles everything needed for production deployment. It prints your auth token and a token-prefilled dashboard URL when it finishes.
+
+### Updating an existing install
+
+After the first install, keep the repo on the Pi (e.g. `~/dash-of-pi`) and update with:
+
+```bash
+cd ~/dash-of-pi
+git pull
+sudo ./scripts/update.sh             # pull + build + redeploy + restart
+```
+
+`update.sh` reuses the swap handling from the installer (2 GB on low-RAM Pis so the Go build doesn't get OOM-killed), reloads the systemd unit only if it changed, and prints the dashboard URL when done.
+
+For a UI-only change (no Go code touched), skip the build:
+
+```bash
+sudo ./scripts/update.sh --web-only
+```

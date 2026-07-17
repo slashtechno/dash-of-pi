@@ -3,7 +3,7 @@ set -e
 
 # Temporary swap provided to keep Go builds alive on memory-constrained Pis
 BUILD_SWAP_FILE="/var/swap-dash-of-pi-build"
-BUILD_SWAP_SIZE_MB=1024
+BUILD_SWAP_SIZE_MB=2048
 SWAP_CREATED=false
 
 cleanup_build_swap() {
