@@ -56,11 +56,16 @@ if [ "$EUID" -ne 0 ]; then
     exit 1
 fi
 
+# When run via sudo, perform unprivileged steps (git pull, go build) as the
+# invoking user so the repo doesn't fill up with root-owned files (which would
+# break a later `git pull` as the normal user).
+AS_USER="${SUDO_USER:-}"
+
 # Repo root is the parent of this script's directory.
 cd "$(dirname "$0")/.."
 
 echo "[1/5] Pulling latest..."
-git pull --ff-only
+if [ -n "$AS_USER" ]; then sudo -u "$AS_USER" git pull --ff-only; else git pull --ff-only; fi
 
 if [ "$WEB_ONLY" = true ]; then
     echo "[2/5] Skipping build (--web-only)"
@@ -77,8 +82,13 @@ else
     # whatever's on PATH (e.g. a dev box) instead of mutating PATH.
     GO_BIN=/usr/local/go/bin/go
     [ -x "$GO_BIN" ] || GO_BIN=go
-    # GOMAXPROCS=1 + GOGC=25 keep peak memory low on the Pi Zero 2W.
-    GOMAXPROCS=1 GOGC=25 "$GO_BIN" build -p 1 -o dash-of-pi .
+    # GOMAXPROCS=1 + GOGC=25 keep peak memory low on the Pi Zero 2W. Build as the
+    # invoking user (not root) so the output binary isn't root-owned in the repo.
+    if [ -n "$AS_USER" ]; then
+        sudo -u "$AS_USER" env GOMAXPROCS=1 GOGC=25 "$GO_BIN" build -p 1 -o dash-of-pi .
+    else
+        GOMAXPROCS=1 GOGC=25 "$GO_BIN" build -p 1 -o dash-of-pi .
+    fi
     cleanup_build_swap
 
     echo "[3/5] Stopping service..."
