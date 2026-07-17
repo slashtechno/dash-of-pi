@@ -73,9 +73,12 @@ if [ "$WEB_ONLY" = true ]; then
 else
     echo "[2/5] Building..."
     maybe_enable_build_swap
-    export PATH=$PATH:/usr/local/go/bin
+    # Resolve the Go binary. install.sh puts Go at /usr/local/go; fall back to
+    # whatever's on PATH (e.g. a dev box) instead of mutating PATH.
+    GO_BIN=/usr/local/go/bin/go
+    [ -x "$GO_BIN" ] || GO_BIN=go
     # GOMAXPROCS=1 + GOGC=25 keep peak memory low on the Pi Zero 2W.
-    GOMAXPROCS=1 GOGC=25 go build -p 1 -o dash-of-pi .
+    GOMAXPROCS=1 GOGC=25 "$GO_BIN" build -p 1 -o dash-of-pi .
     cleanup_build_swap
 
     echo "[3/5] Stopping service..."
