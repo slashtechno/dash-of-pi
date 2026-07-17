@@ -25,14 +25,20 @@ StandardError=journal
 SyslogIdentifier=dash-of-pi
 
 # Resource limits for Pi Zero 2W (512MB RAM)
-LimitNOFILE=1024    # Max open files (videos, camera, HTTP connections)
-LimitNPROC=128      # Max processes/threads
-MemoryMax=200M      # Prevent OOM - limit to 200MB max (leaves room for system)
-MemoryHigh=150M     # Start throttling at 150MB
+# Max open files (videos, camera, HTTP connections)
+LimitNOFILE=1024
+# Max processes/threads
+LimitNPROC=128
+# Prevent OOM - limit to 200MB max (leaves room for system)
+MemoryMax=200M
+# Start throttling at 150MB
+MemoryHigh=150M
 
 # Security hardening
-NoNewPrivileges=true    # Prevent privilege escalation
-PrivateTmp=true         # Isolated /tmp directory
+# Prevent privilege escalation
+NoNewPrivileges=true
+# Isolated /tmp directory
+PrivateTmp=true
 
 # Allow camera access (required for /dev/video0)
 PrivateDevices=false

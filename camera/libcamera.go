@@ -3,7 +3,9 @@ package camera
 import (
 	"bytes"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 )
@@ -44,24 +46,43 @@ func isLibcameraAvailable(logger Logger) bool {
 	return true
 }
 
-// IsCSICamera detects if a device is a CSI camera (libcamera) or USB (V4L2)
-func IsCSICamera(logger Logger) bool {
-	// If rpicam-vid is available and /dev/video0 exists but doesn't respond to V4L2 properly,
-	// assume it's a CSI camera with libcamera
+// IsCSICamera detects if the given device is a CSI (libcamera) camera or a USB (V4L2) camera.
+// A UVC USB webcam (V4L2 driver "uvcvideo") is always handled by the V4L2/ffmpeg path:
+// libcamera's uvcvideo pipeline handler lists these cameras but cannot produce a usable
+// stream, so rpicam-vid fails with "no cameras available". Only genuine CSI sensors
+// (e.g. bcm2835-unicam) are routed to libcamera, and only when it actually enumerates
+// a usable camera. rpicam-still prints "No cameras available!" when none are usable —
+// that string contains "camera", so we match the real listing header instead.
+func IsCSICamera(logger Logger, device string) bool {
 	if !isLibcameraAvailable(logger) {
 		return false
 	}
 
-	// Check if rpicam-vid can enumerate cameras
+	if driver := v4l2Driver(device); driver == "uvcvideo" {
+		logger.Debugf("Camera device %s uses V4L2 driver %s -> USB webcam, using V4L2 path", device, driver)
+		return false
+	}
+
 	cmd := exec.Command("rpicam-still", "--list-cameras")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		logger.Debugf("rpicam-still enumeration failed: %v", err)
 		return false
 	}
+	return strings.Contains(string(output), "Available cameras")
+}
 
-	// If we got output with "camera" in it, libcamera is available
-	return strings.Contains(strings.ToLower(string(output)), "camera")
+// v4l2Driver returns the kernel V4L2 driver name for a /dev/videoN device
+// (e.g. "uvcvideo", "bcm2835-unicam"), or "" if it cannot be determined.
+func v4l2Driver(device string) string {
+	if device == "" {
+		device = "/dev/video0"
+	}
+	link, err := os.Readlink(filepath.Join("/sys/class/video4linux", filepath.Base(device), "device/driver"))
+	if err != nil {
+		return ""
+	}
+	return filepath.Base(link)
 }
 
 // recordAndStreamSegmentLibcamera records video using rpicam-vid (libcamera)

@@ -206,6 +206,15 @@ func (sm *StorageManager) Stop() {
 	close(sm.done)
 }
 
+// SetCap updates the storage cap live (no service restart needed).
+// ponytail: storageCapGB is a single int read by the cleanup goroutine; a plain
+// assignment is safe on 64-bit and good enough here.
+func (sm *StorageManager) SetCap(gb int) {
+	if gb > 0 {
+		sm.storageCapGB = gb
+	}
+}
+
 // CleanupTempExportDirs removes any leftover temporary export directories
 // These can be left behind if the process crashes during export generation
 func (sm *StorageManager) CleanupTempExportDirs() int {

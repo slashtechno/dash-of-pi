@@ -50,7 +50,7 @@ func NewCamera(config CameraConfig, segmentLength int, logger Logger) (*Camera, 
 	// Detect camera type and encoder once on startup rather than per-segment.
 	// IsCSICamera shells out to rpicam-still, which is slow and may conflict
 	// with an active rpicam-vid process if called during recording.
-	camera.isCSI = IsCSICamera(logger)
+	camera.isCSI = IsCSICamera(logger, config.Device)
 	camera.videoEncoder = detectVideoEncoder(logger)
 
 	if camera.isCSI {

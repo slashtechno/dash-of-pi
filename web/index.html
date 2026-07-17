@@ -4,136 +4,168 @@
 	<meta charset="UTF-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
 	<title>Dash of Pi</title>
-	<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%234ade80'%3E%3Cpath d='M24 5.25v13a.75.75 0 0 1-1.136.643L16.5 15.075v2.175A1.75 1.75 0 0 1 14.75 19h-13A1.75 1.75 0 0 1 0 17.25v-11C0 5.284.784 4.5 1.75 4.5h13c.966 0 1.75.784 1.75 1.75v2.175l6.364-3.818A.75.75 0 0 1 24 5.25Zm-9 1a.25.25 0 0 0-.25-.25h-13a.25.25 0 0 0-.25.25v11c0 .138.112.25.25.25h13a.25.25 0 0 0 .25-.25v-11Zm1.5 7.075 6 3.6V6.575l-6 3.6Z'/%3E%3C/svg%3E">
+	<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%2342e2b0'%3E%3Cpath d='M24 5.25v13a.75.75 0 0 1-1.136.643L16.5 15.075v2.175A1.75 1.75 0 0 1 14.75 19h-13A1.75 1.75 0 0 1 0 17.25v-11C0 5.284.784 4.5 1.75 4.5h13c.966 0 1.75.784 1.75 1.75v2.175l6.364-3.818A.75.75 0 0 1 24 5.25Zm-9 1a.25.25 0 0 0-.25-.25h-13a.25.25 0 0 0-.25.25v11c0 .138.112.25.25.25h13a.25.25 0 0 0 .25-.25v-11Zm1.5 7.075 6 3.6V6.575l-6 3.6Z'/%3E%3C/svg%3E">
 	<link rel="stylesheet" href="/web/style.css">
 </head>
 <body>
 	<div id="toastContainer" class="toast-container"></div>
 
-	<div class="container">
-		<header>
-			<h1>Dash of Pi</h1>
+	<div class="app">
+		<!-- Top navigation -->
+		<header class="topbar">
+			<div class="brand">
+				<svg class="brand-mark" width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M24 5.25v13a.75.75 0 0 1-1.136.643L16.5 15.075v2.175A1.75 1.75 0 0 1 14.75 19h-13A1.75 1.75 0 0 1 0 17.25v-11C0 5.284.784 4.5 1.75 4.5h13c.966 0 1.75.784 1.75 1.75v2.175l6.364-3.818A.75.75 0 0 1 24 5.25Z"/></svg>
+				<h1>Dash of Pi</h1>
+			</div>
+			<nav class="tabs" role="tablist">
+				<button class="tab active" data-view="dashboard" role="tab">Dashboard</button>
+				<button class="tab" data-view="settings" role="tab">Settings</button>
+			</nav>
 			<div class="status-badge">
 				<span class="status-dot"></span>
-				<span id="statusText">Connecting...</span>
+				<span id="statusText">Connecting…</span>
 			</div>
 		</header>
 
-		<div class="stats-grid">
-			<div class="stat-card">
-				<div class="stat-label">Storage Used</div>
-				<div class="stat-value" id="storageUsed">--</div>
-				<div class="storage-bar">
-					<div class="storage-fill" id="storageFill"></div>
+		<!-- First-run setup banner -->
+		<div id="setupBanner" class="banner hidden">
+			<div class="banner-body">
+				<div class="banner-title">No cameras configured yet</div>
+				<div class="banner-text">Add your first camera and we'll auto-detect supported resolutions &amp; framerates.</div>
+			</div>
+			<button class="btn-primary" id="setupAddBtn">Add a camera</button>
+		</div>
+
+		<!-- ================= Dashboard view ================= -->
+		<main id="view-dashboard" class="view active">
+			<section class="stats-grid">
+				<div class="stat-card">
+					<div class="stat-label">Storage Used</div>
+					<div class="stat-value" id="storageUsed">--</div>
+					<div class="storage-bar"><div class="storage-fill" id="storageFill"></div></div>
+					<div class="storage-text" id="storageText">-- / --</div>
 				</div>
-				<div class="storage-text" id="storageText">-- / --</div>
-			</div>
-			<div class="stat-card">
-				<div class="stat-label">Segments</div>
-				<div class="stat-value" id="videoCount">0</div>
-				<div class="storage-text">MJPEG files stored</div>
-			</div>
-			<div class="stat-card">
-				<div class="stat-label">Uptime</div>
-				<div class="stat-value" id="uptime">--</div>
-				<div class="storage-text">Since last boot</div>
-			</div>
-		</div>
-
-		<div class="section">
-			<div class="section-header">
-				<div class="section-title">Live Stream</div>
-				<select id="streamCamera" class="camera-select hidden" onchange="switchStreamCamera()"></select>
-			</div>
-			<div class="player-container" id="playerContainer">
-				<p class="empty-state">Loading stream...</p>
-			</div>
-		</div>
-
-		<div class="section">
-			<div class="section-header">
-				<div class="section-title">Cameras</div>
-				<button class="btn-sm" onclick="openAddCameraModal()">+ Add Camera</button>
-			</div>
-			<div id="camerasList" class="cameras-list">
-				<div class="loading">Loading cameras...</div>
-			</div>
-		</div>
-
-		<div class="section">
-			<div class="section-title">Export Video</div>
-
-			<div class="export-controls">
-				<div class="range-tabs">
-					<button id="lifetimeRangeBtn" class="range-tab active" onclick="setRange('lifetime')">Lifetime</button>
-					<button id="customRangeBtn" class="range-tab" onclick="setRange('custom')">Custom Range</button>
+				<div class="stat-card">
+					<div class="stat-label">Segments</div>
+					<div class="stat-value" id="videoCount">0</div>
+					<div class="storage-text">MJPEG files stored</div>
 				</div>
+				<div class="stat-card">
+					<div class="stat-label">Uptime</div>
+					<div class="stat-value" id="uptime">--</div>
+					<div class="storage-text">Since server start</div>
+				</div>
+			</section>
 
-				<div id="customDateForm" class="custom-date-form hidden">
-					<div class="form-row">
-						<div class="form-group">
-							<label>Start (UTC)</label>
-							<input type="datetime-local" id="startDate">
-						</div>
-						<div class="form-group">
-							<label>End (UTC)</label>
-							<input type="datetime-local" id="endDate">
+			<section class="card">
+				<div class="card-head">
+					<div class="card-title"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="6" width="14" height="12" rx="2"/><path d="M16 10l6-4v12l-6-4"/></svg>Live Stream</div>
+					<select id="streamCamera" class="select hidden"></select>
+				</div>
+				<div class="player" id="playerContainer">
+					<p class="empty-state">Loading stream…</p>
+				</div>
+			</section>
+
+			<section class="card">
+				<div class="card-title"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12"/><path d="M8 11l4 4 4-4"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>Export Video</div>
+				<div class="export-controls">
+					<div class="range-tabs">
+						<button id="lifetimeRangeBtn" class="range-tab active">Lifetime</button>
+						<button id="customRangeBtn" class="range-tab">Custom Range</button>
+					</div>
+					<div id="customDateForm" class="custom-date-form hidden">
+						<div class="form-row">
+							<div class="form-group"><label>Start (UTC)</label><input type="datetime-local" id="startDate"></div>
+							<div class="form-group"><label>End (UTC)</label><input type="datetime-local" id="endDate"></div>
 						</div>
 					</div>
+					<div class="export-action">
+						<button id="serverExportBtn" class="btn-primary">Generate Export</button>
+						<span class="export-note">A new export replaces the current one.</span>
+					</div>
 				</div>
+				<div id="exportProgress" class="progress hidden">
+					<div class="progress-label" id="exportProgressLabel"></div>
+					<div class="progress-bar"><div class="progress-fill" id="exportProgressFill"></div></div>
+					<div class="progress-text" id="exportProgressText"></div>
+				</div>
+				<div id="exportDownload" class="export-download hidden">
+					<div class="export-download-info" id="exportDownloadInfo"></div>
+					<div class="row-gap">
+						<button class="btn-success" id="btnDownloadExport">Download</button>
+						<button class="btn-danger" id="btnDeleteExport">Delete</button>
+					</div>
+				</div>
+			</section>
 
-				<div class="export-action">
-					<button id="serverExportBtn" onclick="generateVideo()">Generate Export</button>
-					<span class="export-note">Starting a new export replaces this one.</span>
+			<section class="card">
+				<div class="card-head">
+					<div class="card-title"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/></svg>Recorded Segments</div>
+					<div class="segments-toolbar">
+						<span class="muted">Times in <span id="segmentTimezoneLabel">local</span></span>
+						<button id="segmentTimezoneToggle" class="btn-ghost btn-sm">Use UTC</button>
+					</div>
 				</div>
-			</div>
+				<div id="segmentRemuxStatus" class="progress hidden">
+					<div class="progress-label" id="segmentRemuxLabel">Remuxing segment…</div>
+					<div class="progress-bar"><div class="progress-fill" id="segmentRemuxFill"></div></div>
+					<div class="progress-text" id="segmentRemuxText"></div>
+				</div>
+				<div id="videoList" class="video-list"><div class="empty-state">Loading…</div></div>
+			</section>
+		</main>
 
-			<div id="exportProgress" class="export-progress hidden">
-				<div class="export-progress-label" id="exportProgressLabel"></div>
-				<div class="progress-bar">
-					<div class="progress-bar-fill" id="exportProgressFill"></div>
+		<!-- ================= Settings view ================= -->
+		<main id="view-settings" class="view">
+			<section class="card">
+				<div class="card-head">
+					<div class="card-title"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7h3l2-2h8l2 2h3v12H3z"/><circle cx="12" cy="13" r="3.5"/></svg>Cameras</div>
+					<button class="btn-primary btn-sm" id="btnAddCamera">+ Add Camera</button>
 				</div>
-				<div class="export-progress-text" id="exportProgressText"></div>
-			</div>
+				<div id="camerasList" class="cameras-list"><div class="empty-state">Loading cameras…</div></div>
+			</section>
 
-			<div id="exportDownload" class="export-download hidden">
-				<div class="export-download-info" id="exportDownloadInfo"></div>
-				<div class="export-download-actions">
-					<button class="btn-success" onclick="downloadExport()">Download</button>
-					<button class="btn-danger" onclick="deleteExport()">Delete</button>
+			<section class="card">
+				<div class="card-title"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H10a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V10a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>General</div>
+				<div class="form-grid">
+					<div class="form-group">
+						<label>Storage cap (GB)</label>
+						<input type="number" id="cfgStorageCap" min="1">
+						<small>Oldest segments are deleted when this is exceeded.</small>
+					</div>
+					<div class="form-group">
+						<label>Segment length (seconds)</label>
+						<input type="number" id="cfgSegmentLen" min="5">
+						<small>Length of each recorded MJPEG file.</small>
+					</div>
+					<div class="form-group">
+						<label>HTTP port</label>
+						<input type="number" id="cfgPort" min="1">
+						<small>Changing the port requires a service restart.</small>
+					</div>
 				</div>
-			</div>
-		</div>
+				<div class="row-gap">
+					<button class="btn-primary" id="saveGeneralBtn">Save General Settings</button>
+					<span id="generalSavedMsg" class="muted"></span>
+				</div>
+			</section>
 
-		<div class="section">
-			<div class="section-title">Recorded Segments</div>
-			<div id="segmentRemuxStatus" class="export-progress hidden">
-				<div class="export-progress-label" id="segmentRemuxLabel">Remuxing segment...</div>
-				<div class="progress-bar">
-					<div class="progress-bar-fill" id="segmentRemuxFill"></div>
+			<section class="card">
+				<div class="card-title"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 7a4 4 0 1 0-5.6 5.6"/><path d="M21 2l-9 9"/><path d="M17 2h5v5"/></svg>Auth Token</div>
+				<p class="muted">Use this token to authenticate API clients and the dashboard URL: <code>?token=…</code></p>
+				<div class="token-row">
+					<input type="text" id="tokenBox" readonly>
+					<button class="btn-ghost" id="tokenRevealBtn">Show</button>
+					<button class="btn-ghost" id="btnCopyToken">Copy</button>
+					<button class="btn-danger" id="btnRegenerateToken">Regenerate</button>
 				</div>
-				<div class="export-progress-text" id="segmentRemuxText"></div>
-			</div>
-			<div class="segments-toolbar">
-				<div class="segments-hint">Times shown in <span id="segmentTimezoneLabel">local</span></div>
-				<button id="segmentTimezoneToggle" class="btn-secondary btn-sm" onclick="toggleSegmentTimezone()">Use UTC</button>
-			</div>
-			<div id="videoList" class="video-list">
-				<div class="loading">Loading...</div>
-			</div>
-		</div>
+			</section>
+		</main>
 
 		<footer class="footer">
-			<div class="footer-content">
-				<span>All times in UTC</span>
-				<span>|</span>
-				<a href="https://github.com/slashtechno/dash-of-pi" target="_blank" rel="noopener noreferrer">
-					<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-						<path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
-					</svg>
-					GitHub
-				</a>
-			</div>
+			<span>All times in UTC unless noted</span>
+			<a href="https://github.com/slashtechno/dash-of-pi" target="_blank" rel="noopener noreferrer">GitHub →</a>
 		</footer>
 	</div>
 
@@ -141,9 +173,9 @@
 	<div class="modal" id="authModal">
 		<div class="modal-box auth-box">
 			<h2>Authentication</h2>
-			<p>Enter your auth token to continue.</p>
-			<input type="password" id="authInput" placeholder="Token" onkeypress="if(event.key==='Enter')authenticate()">
-			<button onclick="authenticate()">Sign in</button>
+			<p>Enter your auth token to continue. Find it in the server logs or <code>/etc/dash-of-pi/config.json</code>.</p>
+			<input type="password" id="authInput" placeholder="Token">
+			<button class="btn-primary btn-block" id="btnAuthSignIn">Sign in</button>
 			<div id="authError" class="auth-error hidden"></div>
 		</div>
 	</div>
@@ -151,63 +183,66 @@
 	<!-- Add/Edit Camera modal -->
 	<div class="modal" id="cameraModal">
 		<div class="modal-box">
-			<div class="modal-header">
+			<div class="modal-head">
 				<h2 id="cameraModalTitle">Add Camera</h2>
-				<button class="modal-close" onclick="closeCameraModal()">X</button>
+				<button class="modal-close" id="btnCancelCameraX">✕</button>
 			</div>
 			<div class="modal-body">
 				<div class="form-group">
-					<label>Camera ID</label>
-					<input type="text" id="cameraId" disabled>
-					<small>Auto-generated for new cameras</small>
+					<label>Camera</label>
+					<div class="row-gap">
+						<select id="cameraDeviceSelect" class="select">
+							<option value="">Loading devices…</option>
+						</select>
+						<button class="btn-ghost btn-sm" id="btnRescan" title="Rescan for cameras">Rescan</button>
+					</div>
+					<label style="margin-top:10px">Device path *</label>
+					<input type="text" id="cameraDevice" placeholder="/dev/video0">
+					<small id="deviceHint">Pick a detected camera to autofill, or type a device path manually.</small>
 				</div>
 				<div class="form-group">
 					<label>Name *</label>
 					<input type="text" id="cameraName" placeholder="Front Camera">
 				</div>
 				<div class="form-group">
-					<label>Device *</label>
-					<input type="text" id="cameraDevice" placeholder="/dev/video0">
+					<label>Camera ID</label>
+					<input type="text" id="cameraId" disabled>
+					<small>Auto-generated for new cameras.</small>
 				</div>
-				<div class="form-group">
+				<div class="form-row">
+					<div class="form-group" id="resolutionGroup">
+						<label>Resolution</label>
+						<select id="cameraResolution" class="select"></select>
+						<div class="form-row hidden" id="customResRow" style="margin-top:8px">
+							<input type="number" id="cameraResWidth" placeholder="Width" style="margin-right:8px">
+							<input type="number" id="cameraResHeight" placeholder="Height">
+						</div>
+					</div>
+					<div class="form-group" id="fpsGroup">
+						<label>FPS</label>
+						<select id="cameraFPS" class="select"></select>
+						<input type="number" id="cameraFPSManual" placeholder="FPS" class="hidden" style="margin-top:8px">
+					</div>
+				</div>
+				<div class="form-group" id="rotationGroup">
 					<label>Rotation</label>
-					<select id="cameraRotation">
-						<option value="0">0 deg</option>
-						<option value="90">90 deg clockwise - USB only</option>
-						<option value="180">180 deg</option>
-						<option value="270">270 deg - USB only</option>
+					<select id="cameraRotation" class="select">
+						<option value="0">0°</option>
+						<option value="90">90° (USB only)</option>
+						<option value="180">180°</option>
+						<option value="270">270° (USB only)</option>
 					</select>
 				</div>
-				<div class="form-row">
-					<div class="form-group">
-						<label>Width</label>
-						<input type="number" id="cameraResWidth" value="1920">
-					</div>
-					<div class="form-group">
-						<label>Height</label>
-						<input type="number" id="cameraResHeight" value="1080">
-					</div>
-				</div>
-				<div class="form-row">
-					<div class="form-group">
-						<label>Bitrate (kbps)</label>
-						<input type="number" id="cameraBitrate" value="2048">
-					</div>
-					<div class="form-group">
-						<label>FPS</label>
-						<input type="number" id="cameraFPS" value="30">
-					</div>
-				</div>
 				<div class="form-group">
-					<label>MJPEG Quality (2-31, lower = better)</label>
-					<input type="number" id="cameraMJPEGQuality" value="5" min="2" max="31">
+					<label>MJPEG quality (2–31, lower = better)</label>
+					<input type="number" id="cameraMJPEGQuality" value="8" min="2" max="31">
 				</div>
-				<div class="form-group checkbox-group">
+				<div class="form-group checkbox-group" id="timestampGroup">
 					<label class="checkbox-label">
 						<input type="checkbox" id="cameraEmbedTimestamp" checked>
 						Embed UTC timestamp
 					</label>
-					<small>USB cameras only</small>
+					<small>USB cameras only.</small>
 				</div>
 				<div class="form-group checkbox-group">
 					<label class="checkbox-label">
@@ -216,13 +251,27 @@
 					</label>
 				</div>
 			</div>
-			<div class="modal-footer">
-				<button class="btn-secondary" onclick="closeCameraModal()">Cancel</button>
-				<button class="btn-primary" onclick="saveCameraConfig()">Save</button>
+			<div class="modal-foot">
+				<button class="btn-ghost" id="btnCancelCamera">Cancel</button>
+				<button class="btn-primary" id="btnSaveCamera">Save</button>
 			</div>
 		</div>
 	</div>
 
-	<script src="/web/app.js"></script>
+	<!-- Confirm modal (reusable) -->
+	<div class="modal" id="confirmModal">
+		<div class="modal-box modal-box-sm">
+			<div class="modal-head"><h2 id="confirmTitle">Confirm</h2></div>
+			<div class="modal-body">
+			<p id="confirmMessage" class="confirm-message"></p>
+		</div>
+			<div class="modal-foot">
+				<button class="btn-ghost" id="confirmCancel">Cancel</button>
+				<button class="btn-danger" id="confirmOk">Confirm</button>
+			</div>
+		</div>
+	</div>
+
+	<script type="module" src="/web/app.js"></script>
 </body>
 </html>

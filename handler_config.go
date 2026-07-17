@@ -54,12 +54,17 @@ func (s *APIServer) handleUpdateConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Update config in memory
+	restartRequired := false
+
 	if newConfig.Port > 0 {
+		if newConfig.Port != s.config.Port {
+			restartRequired = true // port binds the listening socket at startup
+		}
 		s.config.Port = newConfig.Port
 	}
 	if newConfig.StorageCapGB > 0 {
 		s.config.StorageCapGB = newConfig.StorageCapGB
+		s.storage.SetCap(newConfig.StorageCapGB) // applied live
 	}
 	if newConfig.SegmentLengthS > 0 {
 		s.config.SegmentLengthS = newConfig.SegmentLengthS
@@ -68,17 +73,25 @@ func (s *APIServer) handleUpdateConfig(w http.ResponseWriter, r *http.Request) {
 		s.config.Cameras = newConfig.Cameras
 	}
 
-	// Save config to disk
 	if err := SaveConfig(s.config, s.configPath); err != nil {
 		s.logger.Printf("Failed to save config: %v", err)
 		http.Error(w, "Failed to save configuration", http.StatusInternalServerError)
 		return
 	}
 
+	// Apply camera/segment changes live by reloading cameras (unless caller only
+	// touched global fields with no cameras payload).
+	if len(newConfig.Cameras) > 0 || newConfig.SegmentLengthS > 0 {
+		if err := s.cameraManager.RestartWithConfigs(convertCameraConfigs(s.config.Cameras), s.config.SegmentLengthS, s.config.VideoDir); err != nil {
+			s.logger.Printf("Failed to restart cameras: %v", err)
+		}
+	}
+
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{
-		"status":  "success",
-		"message": "Configuration updated. Restart required for changes to take effect.",
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":           "success",
+		"message":          "Configuration updated.",
+		"restart_required": restartRequired,
 	})
 }
 
@@ -268,5 +281,29 @@ func (s *APIServer) handleDeleteCamera(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{
 		"status":  "success",
 		"message": "Camera deleted and applied.",
+	})
+}
+
+// handleRegenerateToken mints a new auth token, persists it, and swaps it into
+// the live auth middleware so the caller (and any other clients with the new
+// token) keep working without a service restart.
+func (s *APIServer) handleRegenerateToken(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	newToken := generateToken()
+	s.config.AuthToken = newToken
+	if err := SaveConfig(s.config, s.configPath); err != nil {
+		s.logger.Printf("Failed to save config after token regen: %v", err)
+		http.Error(w, "Failed to save configuration", http.StatusInternalServerError)
+		return
+	}
+	s.auth.UpdateToken(newToken)
+	s.logger.Printf("Auth token regenerated")
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{
+		"status": "success",
+		"token":  newToken,
 	})
 }

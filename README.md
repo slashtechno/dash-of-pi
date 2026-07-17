@@ -10,7 +10,8 @@ Headless dash cam for Raspberry Pi Zero 2W (but usable on other machines). Conti
 # ssh pi@raspberrypi.local
 git clone https://github.com/slashtechno/dash-of-pi && cd dash-of-pi
 sudo ./scripts/install.sh
-# Follow the installer prompts and reboot when prompted
+# Follow the installer prompts and reboot when prompted.
+# The installer prints your auth token and a token-prefilled dashboard URL at the end.
 # Access at http://<your-pi-hostname-or-ip>:8080
 ```
 
@@ -25,12 +26,14 @@ go run .
 ## Features
 
 - **Multi-camera support** - Record from multiple cameras simultaneously
-- **Per-camera configuration** - Independent settings for resolution, rotation, bitrate, quality
+- **Camera auto-discovery** - The dashboard scans `/dev/video*`, detects USB (UVC) vs CSI cameras, and lists each camera's *supported* resolutions and framerates, so you pick from a dropdown instead of guessing (and can't pick an unsupported combo)
+- **Per-camera configuration** - Independent settings for resolution, rotation, quality, timestamp overlay
+- **Settings page** - Edit cameras, storage cap, segment length, port, and the auth token from the browser (most changes apply live, no restart)
 - Records continuous video in segments with rolling storage
 - Web dashboard for live streaming and downloading videos
-- Timestamps embedded on video (optional, per-camera)
+- Timestamps embedded on video (optional, per-camera; USB cameras only)
 - On-demand video export with persistent storage
-- Authentication
+- Authentication (token reveal/copy/regenerate from the UI)
 - Systemd service for reliable background operation
 - All times in UTC (noted in footer)
 - Organized video storage by camera (videos/front/, videos/rear/, etc.)
@@ -56,23 +59,41 @@ go run .
 
 ## API Endpoints
 
-All endpoints except `/health` require `Authorization: Bearer <token>` header.
-<!-- TODO: outdated -->
+All endpoints except `/health` require `Authorization: Bearer <token>` header (or `?token=<token>` query param for stream/download URLs that are opened in a browser).
+
 ```bash
-GET /health              # No auth required
-GET /api/status          # System status
-GET /api/videos          # List videos
-GET /api/video/download  # Download video
-GET /api/video/stream    # Stream video
-GET /api/config          # Configuration
-GET /api/auth/token      # Auth token
+GET  /health                       # No auth required
+GET  /api/status                   # System status + storage + video list
+GET  /api/videos                   # List recorded segments
+GET  /api/video/download           # Download a segment (?camera=&file=)
+POST /api/video/remux               # Remux a segment to MP4 (?camera=&file=)
+GET  /api/video/remux/status       # Remux progress
+GET  /api/video/remux/download     # Download the remuxed MP4
+GET  /api/video/latest             # Latest video info
+POST /api/videos/generate-export   # Generate an MP4 export (?start=&end= ISO-8601)
+GET  /api/videos/export-status     # Export progress
+GET  /api/videos/download-export   # Download the current export
+DELETE /api/videos/delete-export   # Delete the current export
+GET  /api/stream/frame             # Latest frame as JPEG (?camera=)
+GET  /api/stream/mjpeg             # MJPEG stream (?camera=)
+GET  /api/config                    # Current configuration
+POST /api/config/update            # Update global settings (storage/segment/port; cameras)
+GET  /api/cameras                   # Configured cameras
+GET  /api/cameras/discover          # Scan for cameras + supported formats (USB/UVC + CSI)
+POST /api/cameras/add               # Add a camera
+PUT  /api/cameras/update            # Update a camera (?id=)
+DELETE /api/cameras/delete          # Delete a camera (?id=)
+GET  /api/auth/token                # Current auth token
+POST /api/auth/regenerate-token     # Mint a new token (applies immediately)
 ```
 
 ## Configuration
 
-Config stored at `~/.config/dash-of-pi/config.json`. See `config.json.example` for a complete multi-camera example.
+Config stored at `~/.config/dash-of-pi/config.json` (or `/etc/dash-of-pi/config.json` under the systemd service). See `config.json.example` for a complete multi-camera example.
 
-> Using `sudo ./scripts/install.sh`? The generated Systemd service keeps its config at `/etc/dash-of-pi/config.json` and writes recordings to `/var/lib/dash-of-pi/videos`. Adjust that file (or use the dashboard camera editor) and restart the service to apply changes.
+**Prefer the dashboard.** The **Settings** page edits cameras, storage cap, segment length, port, and the auth token in the browser and persists to this file. Storage cap, segment length, and camera changes apply live; changing the HTTP port requires a service restart.
+
+> Using `sudo ./scripts/install.sh`? The generated systemd service keeps its config at `/etc/dash-of-pi/config.json` and writes recordings to `/var/lib/dash-of-pi/videos`.
 
 ### Multi-Camera Configuration
 
@@ -126,7 +147,7 @@ Config stored at `~/.config/dash-of-pi/config.json`. See `config.json.example` f
 - `rotation`: Camera rotation in degrees (0, 90, 180, 270)
  - Note: 90 deg and 270 deg are only supported on USB cameras (not Pi CSI cameras)
 - `res_width` / `res_height`: Video resolution
-- `bitrate`: Video bitrate in kbps
+- `bitrate`: Video bitrate in kbps (unused by MJPEG capture; kept for config compatibility)
 - `fps`: Recording framerate
 - `mjpeg_quality`: MJPEG quality (2-31, lower = better quality)
  - Recommended: 5-8 (balanced), 2-4 (high quality), 10+ (low quality/storage)
@@ -144,18 +165,24 @@ Old single-camera configs are automatically migrated to the new format on startu
 - MJPEG stream: `/api/stream/mjpeg?camera=rear`
 - If no camera parameter is provided, the first camera is used
 
-Restart service to apply config changes.
+Camera, storage-cap, and segment-length changes apply live from the Settings page. Only a port change requires a service restart.
 
 ## Dashboard
 
-- **Generate Video Section:**
- - **Lifetime:** Creates MP4 from all stored MJPEG files
- - **Custom Date Range:** Creates MP4 from MJPEG files within specified dates (input times are in UTC)
- - MP4 file is re-encoded during generation and saved for download
- - Only one export is kept at a time (replaces previous export)
- - Export can be downloaded multiple times until deleted or replaced
+The UI has two tabs:
+
+**Dashboard** — live stream, storage/segments/uptime stats, the export tool, and the recorded-segments list (download MJPEG or remux to MP4 per segment; toggle local/UTC times).
+
+**Settings**
+- **Cameras** — add/remove/edit cameras. The add/edit form runs **camera auto-discovery**: it lists detected cameras (USB/UVC or CSI), auto-fills the device path, and populates the resolution/FPS dropdowns from the camera's *actual supported formats* — so you can't select an unsupported combo. CSI cameras hide the options they don't support (90°/270° rotation, timestamp overlay) and use libcamera defaults.
+- **General** — storage cap (GB), segment length (s), HTTP port. Storage cap and segment length apply live; a port change requires a service restart (shown in the UI).
+- **Auth Token** — reveal, copy, and regenerate the bearer token. Regeneration takes effect immediately.
+
+- **Export Video:**
+ - **Lifetime:** creates an MP4 from all stored MJPEG files
+ - **Custom Date Range:** creates an MP4 from MJPEG files within the given dates (input times are in UTC)
+ - MP4 is re-encoded during generation and saved for download (only one export at a time; a new export replaces the previous)
  - All times displayed in UTC (noted in footer)
-- **Camera Editor:** Add, remove, or edit cameras (device, resolution, etc.) directly in the browser; changes persist to the config file and trigger a camera restart.
 
 ## Troubleshooting
 
@@ -168,9 +195,12 @@ journalctl -u dash-of-pi -f
 ```bash
 # Should have .mjpeg files:
 ls ~/.local/state/dash-of-pi/videos/
-# Make sure that the resolution and FPS that are set in the config are supported by the camera:
-rpicam-still --list-cameras
-sudo cat /etc/dash-of-pi/config.json | grep -e "res_" -e "fps"
+# USB webcams are captured with ffmpeg via V4L2; Pi CSI cameras use rpicam-vid (libcamera).
+# The app auto-detects the type from the V4L2 driver (uvcvideo = USB).
+# Use the Settings → Add Camera discovery to see detected cameras and their supported
+# resolutions/FPS, or check manually:
+v4l2-ctl --device=/dev/video0 --list-formats-ext   # USB/UVC camera
+rpicam-still --list-cameras                       # Pi CSI camera (libcamera)
 # Still doesn't work? Plug out the camera, reboot, plug it back in, and reboot again. Why does it work? No idea.
 ```
 
@@ -191,7 +221,8 @@ sudo rm /var/swap-dash-of-pi-build
 **Dashboard shows "Failed to connect":**
 ```bash
 curl http://localhost:8080/health
-cat ~/.config/dash-of-pi/config.json | grep auth_token
+cat /etc/dash-of-pi/config.json | grep auth_token   # or ~/.config/dash-of-pi/config.json
+# The auth token is also shown in the Settings → Auth Token tab (reveal) or the server logs.
 ```
 
 **MP4 generation is slow:**
@@ -202,7 +233,7 @@ cat ~/.config/dash-of-pi/config.json | grep auth_token
 ## Hardware Requirements
 
 - Raspberry Pi Zero 2W, Pi 4/5, or Compute Module 4/5
-- Sony IMX219 camera (Pi Camera Module 2 or Arducam IMX219 clone)
+- Pi CSI camera (Sony IMX219 / Pi Camera Module 2 or Arducam clone) **or** any UVC USB webcam
 - microSD 16GB+
 - 5V/2.5A power
 

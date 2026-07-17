@@ -1,0 +1,32 @@
+# Normalize all text files to LF in the repository, regardless of platform.
+* text=auto eol=lf
+
+# Be explicit so checkouts on Windows stay LF for source/config files.
+*.go       text eol=lf
+*.js       text eol=lf
+*.html     text eol=lf
+*.css      text eol=lf
+*.md       text eol=lf
+*.json     text eol=lf
+*.sh       text eol=lf
+*.service  text eol=lf
+*.yml      text eol=lf
+*.yaml     text eol=lf
+*.mod      text eol=lf
+*.sum      text eol=lf
+*.example  text eol=lf
+Dockerfile text eol=lf
+.gitignore text eol=lf
+.dockerignore text eol=lf
+
+# Binary assets (none tracked today; declare so they're never mangled if added).
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.ico  binary
+*.woff binary
+*.ttf  binary
+*.pdf  binary
+*.zip  binary
+*.gz   binary

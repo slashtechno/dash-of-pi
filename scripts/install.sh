@@ -278,5 +278,14 @@ echo "View logs: journalctl -u dash-of-pi -f"
 echo "Config file: /etc/dash-of-pi/config.json"
 echo "Videos directory: /var/lib/dash-of-pi/videos"
 echo
-echo "Access the dashboard at: http://$(hostname -I | awk '{print $1}'):8080"
+# Print the auth token so first-run users don't have to dig through config.json.
+if [ -f /etc/dash-of-pi/config.json ]; then
+    TOKEN=$(grep -o '"auth_token"[[:space:]]*:[[:space:]]*"[^"]*"' /etc/dash-of-pi/config.json | sed -E 's/.*"auth_token"[[:space:]]*:[[:space:]]*"([^"]*)".*/\1/')
+    IP=$(hostname -I | awk '{print $1}')
+    if [ -n "$TOKEN" ]; then
+        echo "Auth token: $TOKEN"
+        echo "Open the dashboard (token pre-filled):"
+        echo "  http://${IP}:8080/?token=${TOKEN}"
+    fi
+fi
 echo

@@ -5,9 +5,11 @@ import (
 	"encoding/base64"
 	"net/http"
 	"strings"
+	"sync"
 )
 
 type AuthMiddleware struct {
+	mu        sync.RWMutex
 	secretKey string
 }
 
@@ -19,6 +21,13 @@ func generateToken() string {
 
 func NewAuthMiddleware(secretKey string) *AuthMiddleware {
 	return &AuthMiddleware{secretKey: secretKey}
+}
+
+// UpdateToken swaps the active bearer token (after a regenerate-token call).
+func (am *AuthMiddleware) UpdateToken(newKey string) {
+	am.mu.Lock()
+	am.secretKey = newKey
+	am.mu.Unlock()
 }
 
 // Check validates the bearer token from the Authorization header or ?token= query param.
@@ -42,7 +51,11 @@ func (am *AuthMiddleware) Check(next http.Handler) http.Handler {
 			token = r.URL.Query().Get("token")
 		}
 
-		if token == "" || token != am.secretKey {
+		am.mu.RLock()
+		key := am.secretKey
+		am.mu.RUnlock()
+
+		if token == "" || token != key {
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
