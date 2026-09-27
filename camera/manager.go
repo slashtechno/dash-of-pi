@@ -34,6 +34,10 @@ func NewCameraManager(configs []CameraConfig, segmentLength int, videoDir string
 		return nil, err
 	}
 
+	if len(cm.cameras) == 0 {
+		return nil, fmt.Errorf("no enabled cameras configured")
+	}
+
 	return cm, nil
 }
 
@@ -57,10 +61,6 @@ func (cm *CameraManager) initializeCameras(configs []CameraConfig, segmentLength
 		cm.streamManagers[config.ID] = streamMgr
 
 		cm.logger.Printf("Initialized camera: %s (%s) - Device: %s", config.Name, config.ID, config.Device)
-	}
-
-	if len(cm.cameras) == 0 {
-		return fmt.Errorf("no enabled cameras configured")
 	}
 
 	return nil
@@ -174,18 +174,6 @@ func (cm *CameraManager) GetStreamManager(id string) (*StreamManager, bool) {
 	defer cm.mu.RUnlock()
 	sm, ok := cm.streamManagers[id]
 	return sm, ok
-}
-
-// ListCameras returns all camera configurations
-func (cm *CameraManager) ListCameras() []CameraConfig {
-	cm.mu.RLock()
-	defer cm.mu.RUnlock()
-
-	configs := make([]CameraConfig, 0, len(cm.cameras))
-	for _, camera := range cm.cameras {
-		configs = append(configs, camera.GetConfig())
-	}
-	return configs
 }
 
 // GetDefaultCameraID returns the ID of the first camera (for backward compatibility)

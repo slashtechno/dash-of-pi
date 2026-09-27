@@ -3,8 +3,39 @@ package main
 import (
 	"dash-of-pi/camera"
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"regexp"
+	"strings"
 )
+
+var cameraIDSlugRe = regexp.MustCompile(`[^a-z0-9]+`)
+
+// generateCameraID derives a unique camera ID from a name, falling back to a
+// numbered suffix on collision (mirrors the "camera_%d" fallback used when
+// loading a config with a missing ID; see LoadOrCreateConfig in config.go).
+func generateCameraID(name string, existing []CameraConfig) string {
+	slug := cameraIDSlugRe.ReplaceAllString(strings.ToLower(name), "_")
+	slug = strings.Trim(slug, "_")
+	if slug == "" {
+		slug = "camera"
+	}
+
+	taken := make(map[string]bool, len(existing))
+	for _, cam := range existing {
+		taken[cam.ID] = true
+	}
+
+	if !taken[slug] {
+		return slug
+	}
+	for i := 2; ; i++ {
+		candidate := fmt.Sprintf("%s_%d", slug, i)
+		if !taken[candidate] {
+			return candidate
+		}
+	}
+}
 
 func convertCameraConfigs(configs []CameraConfig) []camera.CameraConfig {
 	result := make([]camera.CameraConfig, len(configs))
@@ -96,10 +127,9 @@ func (s *APIServer) handleUpdateConfig(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *APIServer) handleListCameras(w http.ResponseWriter, r *http.Request) {
-	cameras := s.cameraManager.ListCameras()
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"cameras": cameras,
+		"cameras": s.config.Cameras,
 	})
 }
 
@@ -181,16 +211,20 @@ func (s *APIServer) handleAddCamera(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Validate required fields
-	if newCamera.ID == "" || newCamera.Name == "" || newCamera.Device == "" {
-		http.Error(w, "Missing required fields (id, name, device)", http.StatusBadRequest)
+	if newCamera.Name == "" || newCamera.Device == "" {
+		http.Error(w, "Missing required fields (name, device)", http.StatusBadRequest)
 		return
 	}
 
-	// Check if camera ID already exists
-	for _, cam := range s.config.Cameras {
-		if cam.ID == newCamera.ID {
-			http.Error(w, "Camera with this ID already exists", http.StatusConflict)
-			return
+	if newCamera.ID == "" {
+		newCamera.ID = generateCameraID(newCamera.Name, s.config.Cameras)
+	} else {
+		// Check if camera ID already exists
+		for _, cam := range s.config.Cameras {
+			if cam.ID == newCamera.ID {
+				http.Error(w, "Camera with this ID already exists", http.StatusConflict)
+				return
+			}
 		}
 	}
 

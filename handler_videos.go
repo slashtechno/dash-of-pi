@@ -362,8 +362,8 @@ func (s *APIServer) handleServeSegment(w http.ResponseWriter, r *http.Request) {
 func (s *APIServer) listVideoFiles() ([]VideoInfo, error) {
 	var videos []VideoInfo
 
-	// List camera directories
-	cameras := s.cameraManager.ListCameras()
+	// List camera directories (include disabled cameras so past recordings stay browsable)
+	cameras := s.config.Cameras
 	for _, cam := range cameras {
 		cameraDir := filepath.Join(s.config.VideoDir, cam.ID)
 
